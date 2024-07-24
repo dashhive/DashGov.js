@@ -6,9 +6,6 @@
 // USAGE
 //   node ./gobject-hash-debugger.js
 
-const DV_LE = true;
-// const DV_BE = false;
-
 var GObj = module.exports;
 
 GObj._type = 0b0000010; // from SER_GETHASH (bitwise enum)
@@ -17,19 +14,48 @@ GObj._protocalVersion = 70231; // 0x00011257 (BE) => 0x57120100 (LE)
 GObj._protocalVersionBytes = Uint8Array.from([0x57, 0x12, 0x01, 0x00]);
 
 /**
- * Only the serialize hex (string) form is canonical.
- * Typically the serialization sorts keys in lexicographical order.
- * Example:
- *   {
- *     "end_epoch": 1721285247,
- *     "name": "test-proposal-4",
- *     "payment_address": "yM7M4YJFv58hgea9FUxLtjKBpKXCsjxWNX",
- *     "payment_amount": 100,
- *     "start_epoch": 1721275247,
- *     "type": 1,
- *     "url": "https://www.dashcentral.org/p/test-proposal-4"
- *    }
- * @typedef {GObjectData}
+ * Returns the number of extra bytes needed to encode the variable-length `nSize`.
+ * If it is less than 253, we will store `nSize` in just the one (assumed) byte.
+ * Otherwise, we scale up according to the smallest power of 2 integer size it can fit in. (u16, u32, u64)
+ * Returns the number of bytes after the first byte that we will need to preserve after `WriteCompactSize` is done.
+ * @param {number} nSize
+ */
+function GetCompactSizeExtraOffset(nSize) {
+  return nSize < 253
+    ? 0
+    : nSize <= 2 ** 16 - 1
+      ? 2
+      : nSize <= 2 ** 32 - 1
+        ? 4
+        : 8;
+}
+
+/**
+ * Writes `nSize` out to `dv` in a variable-length encoding.
+ * Assumes you want to write out the data of `nSize` length to `dv` afterwards.
+ * @param {DataView} dv
+ * @param {number} offset
+ * @param {number} nSize
+ */
+function WriteCompactSize(
+  dv,
+  offset,
+  nSize,
+  s = GetCompactSizeExtraOffset(nSize),
+) {
+  switch (s) {
+    case 2:
+    case 4:
+    case 8:
+      dv.setBigUint64(offset + 1, BigInt(nSize), true);
+      nSize = 252 + Math.log2(s);
+    default:
+      dv.setUint8(offset, nSize);
+  }
+}
+
+/**
+ * @typedef GObjectData
  * @prop {Uint53} end_epoch - whole seconds since epoch (like web-standard `exp`)
  * @prop {String} name - kebab case (no spaces)
  * @prop {String} payment_address - base58-encoded p2pkh
@@ -49,72 +75,80 @@ GObj._protocalVersionBytes = Uint8Array.from([0x57, 0x12, 0x01, 0x00]);
  *   - NO bls data signature (happens on MN)
  *
  * However, it does include all pieces of data required to verify authenticity from proposer.
- *
  * @typedef GObject
  * @prop {Uint8Array} hashParent - typically null / all 0s (32 bytes)
  * @prop {Uint32} revision - typically 1 or 2, etc (4 bytes)
  * @prop {Uint53} time - seconds since epoch (8 bytes)
  * @prop {String} hexJson - variable
- * @prop {null} [masternodeOutpoint] - ??
- * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
- * @prop {null} [collateralTxId] - 32 bytes of 0x00s
- * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
- * @prop {null} [signature] - 0 bytes
+ * @param {GObject} gobj
+ * @returns {Uint8Array}
  */
-GObj.serializeForCollateralTx = function (gobj) {
-  let dataLen = 32 + 4 + 8 + gobj.hexJson.length + 36 + 0;
+// * @prop {null} [masternodeOutpoint] - ??
+// * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
+// * @prop {null} [collateralTxId] - 32 bytes of 0x00s
+// * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
+// * @prop {null} [signature] - 0 bytes
+GObj.serializeForCollateralTx = function ({
+  hexJson,
+  hashParent,
+  revision,
+  time,
+}) {
+  const compactSizeExtraOffset = GetCompactSizeExtraOffset(hexJson.length);
 
-  // ORIGINAL C++ CODE:
-  // CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
-  // ss << hashParent;
-  // ss << revision;
-  // ss << time;
-  // ss << HexStr(vchData);
-  // ss << masternodeOutpoint << uint8_t{} << 0xffffffff; // adding dummy values here to match old hashing
-  // ss << vchSig;
-  // return ss.GetHash();
+  const dataLen =
+    32 + // hashParent
+    4 + // revision
+    8 + // time
+    1 +
+    compactSizeExtraOffset + // compacted length header for HexStr(vchData)
+    hexJson.length + // HexStr(vchData)
+    32 +
+    4 + // masterNodeOutpoint (not used, so these bytes are the defaults)
+    1 +
+    4 + // dummy values to match old hashing
+    1; // compacted length header for `vchSig` in C++ version (always a single `0` byte)
 
-  let bytes = new Uint8Array(dataLen);
-  let dv = new DataView(bytes.buffer);
+  const bytes = new Uint8Array(dataLen);
+  const dv = new DataView(bytes.buffer);
 
-  // IMPORTANT
-  // dv.set and bytes.set SWAP THE ORDER of VALUE and OFFSET !!!
   let offset = 0;
 
-  bytes.set(gobj.hashParent, offset); // TODO swap byte order or no?
-  offset += 32; // 32
+  bytes.set(hashParent, offset);
+  offset += 32;
+  dv.setInt32(offset, revision, true);
+  offset += 4;
+  dv.setBigInt64(offset, BigInt(time), true);
+  offset += 8;
 
-  dv.setInt32(offset, gobj.revision, DV_LE);
-  offset += 4; // 36
-
-  {
-    let time = BigInt(gobj.time);
-    dv.setBigInt64(36, time, DV_LE);
-    offset += 8; // 44
-  }
-
-  {
-    let encoder = new TextEncoder();
-    let hexBytes = encoder.encode(gobj.hexJson);
-    bytes.set(hexBytes, offset);
-    offset += hexBytes.length; // 44 + n
-  }
-
-  // 'bytes' is zero-filled, and there is no masternodeOutpoint yet
-  // bytes.set(gobj.masternodeOutpointTxId, offset);
-  offset += 32; // 76 + n
+  // Write out hexJson, with a compacted size in front
+  WriteCompactSize(dv, offset, hexJson.length, compactSizeExtraOffset);
+  offset += 1 + compactSizeExtraOffset;
+  bytes.set(new TextEncoder().encode(hexJson), offset);
+  offset += hexJson.length;
 
   {
+    // masternodeOutpoint exists in the C++ object and needs to be included,
+    // however, it is not filled with data for our purposes.
+
+    // Write out empty masternodeHash
+    offset += 32;
+
+    // Write out default mastNode `n` (index)
     let masternodeOutpointIndex = 0xffffffff;
-    dv.setUint32(offset, masternodeOutpointIndex, DV_LE);
-    offset += 4; // 80 + n
+    dv.setUint32(offset, masternodeOutpointIndex, true);
+    offset += 4;
+
+    // adding dummy values here to match old hashing
+    offset += 1;
+    dv.setUint32(offset, 0xffffffff, true);
+    offset += 4;
   }
 
-  // no BLS signature, so no bytes
-  // bytes.set(gobj.signature, offset);
-  // offset += 32 // 112 + n
-  offset += 0; // 80 + n
-
+  // In the C++ version, `vchSig` must have its length written out in `WriteCompactSize` fashion.
+  // Then, if the length is greater than 0, `vchSig` is written out too.
+  // However, we never need a signature here, so we just write out a `0`.
+  offset += 1;
   return bytes;
 };
 
@@ -127,7 +161,6 @@ function bytesToHex(bytes) {
     hexes.push(h);
   }
   let hex = hexes.join("");
-
   return hex;
 }
 
@@ -141,7 +174,6 @@ function hexToBytes(hex) {
     bytes[j] = b;
     j += 1;
   }
-
   return bytes;
 }
 
@@ -159,50 +191,41 @@ async function main() {
     hexJson:
       "7b2273746172745f65706f6368223a313732313237353234372c22656e645f65706f6368223a313732313238353234372c226e616d65223a22746573742d70726f706f73616c2d34222c227061796d656e745f61646472657373223a22794d374d34594a4676353868676561394655784c746a4b42704b5843736a78574e58222c227061796d656e745f616d6f756e74223a3130302c2274797065223a312c2275726c223a2268747470733a2f2f7777772e6461736863656e7472616c2e6f72672f702f746573742d70726f706f73616c2d34227d",
   };
+
+  // Note to AJ: that .GetHex() function in the C++ code reversed the bytes!!!!!!
   let knownHash =
-    "a9f2d073c2e6c80c340f15580fbfd622e8d74f4c6719708560bb94b259ae7e25";
+    "257eae59b294bb60857019674c4fd7e822d6bf0f58150f340cc8e6c273d0f2a9";
 
   let gobjCollateralBytes = GObj.serializeForCollateralTx(gobj);
-  {
-    let gobjCollateralHex = bytesToHex(gobjCollateralBytes);
 
-    console.log("Parsed Hex:");
-    let offset = 0;
+  if (1 === 1) {
+    const hex_bytes = bytesToHex(gobjCollateralBytes);
 
-    let hashParent = gobjCollateralHex.substr(offset, 2 * 32);
-    offset += 2 * 32;
-    logLine64(hashParent, "# hashParent (??LE/BE??)");
+    const data = [
+      ["hashParent", 32],
+      ["revision", 4],
+      ["time", 8],
+      ["hexJSONLen-header", 1],
+      ["hexJSONLen", GetCompactSizeExtraOffset(gobj.hexJson.length)],
+      ["hexJSON", gobj.hexJson.length],
+      ["masterNodeOutpointHash", 32],
+      ["masterNodeOutpointIndex", 4],
+      ["dummyByte", 1],
+      ["dummy4Bytes", 4],
+      ["vchSigLen", 1],
+    ];
 
-    let revision = gobjCollateralHex.substr(offset, 2 * 4);
-    offset += 2 * 4;
-    logLine64(revision, `# revision (LE)`, gobj.revision);
+    const maxLength = data.reduce((a, c) => Math.max(a, c[0].length), 0);
 
-    let time = gobjCollateralHex.substr(offset, 2 * 8);
-    offset += 2 * 8;
-    logLine64(time, `# time (LE)`, gobj.time);
-
-    let hexJson = gobjCollateralHex.substr(offset, 2 * gobj.hexJson.length);
-    offset += 2 * gobj.hexJson.length;
-    logLine64(hexJson, `# hexJson (not json utf8 bytes)`);
-
-    let txId = gobjCollateralHex.substr(offset, 2 * 32);
-    offset += 2 * 32;
-    logLine64(txId, ` # masternodeOutpointId (??LE/BE??)`);
-
-    let txOut = gobjCollateralHex.substr(offset, 2 * 4);
-    offset += 2 * 4;
-    logLine64(txOut, ` # masternodeOutpointIndex (LE)`);
-
-    let sig = gobjCollateralHex.substr(offset, 2 * 32);
-    offset += 2 * 0;
-    logLine64(sig, " # signature (0 bytes)");
-
-    console.log("");
-    console.log("Full Hex");
-    console.log(gobjCollateralHex);
+    let start = 0;
+    for (const [name, chunkLen] of data) {
+      console.log(
+        name.padStart(maxLength, " "),
+        "",
+        hex_bytes.slice(start, (start += 2 * chunkLen)),
+      );
+    }
   }
-
-  console.log("");
 
   let hashBytes;
   {
