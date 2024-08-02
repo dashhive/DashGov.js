@@ -1,5 +1,33 @@
 /** @typedef {any} Gov - TODO */
 
+/**
+ * @typedef Snapshot
+ * @prop {Uint53} block - the block to be used for calculation
+ * @prop {Uint53} ms - the time of that block in ms
+ */
+
+/**
+ * @typedef Estimate
+ * @prop {Uint53} secondsPerBlock
+ * @prop {Uint53} voteHeight
+ * @prop {Uint53} voteDelta
+ * @prop {String} voteIso - date in ISO format
+ * @prop {Uint53} voteMs
+ * @prop {Uint53} voteDeltaMs
+ * @prop {Uint53} superblockHeight
+ * @prop {Uint53} superblockDelta
+ * @prop {String} superblockIso - date in ISO format
+ * @prop {Uint53} superblockMs
+ * @prop {Uint53} superblockDeltaMs
+ */
+
+/**
+ * @typedef Estimates
+ * @prop {Estimate} last - the most recent superblock
+ * @prop {Estimate?} lameduck - the current voting period, if close to deadline
+ * @prop {Array<Estimate>} upcoming - future voting periods
+ */
+
 /** @type {Gov} */
 //@ts-ignore
 var DashGov = ("object" === typeof module && exports) || {};
@@ -182,93 +210,97 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   // TODO move to a nice place
-  const SUPERBLOCK_INTERVAL = 16616; // actual
+  const SUPERBLOCK_INTERVAL = 16616;
+  const VOTE_LEAD_BLOCKS = 1662;
+  const PROPOSAL_LEAD_MS = 6 * 24 * 60 * 60 * 1000;
+  DashGov.PROPOSAL_LEAD_MS = PROPOSAL_LEAD_MS;
   DashGov.SUPERBLOCK_INTERVAL = SUPERBLOCK_INTERVAL;
-  const SECONDS_PER_BLOCK_ESTIMATE = 155; // estimate (measured as ~157.64)
 
-  const VOTE_OFFSET_BLOCKS = 1662; // actual
-  const VOTE_OFFSET_MS = VOTE_OFFSET_BLOCKS * SECONDS_PER_BLOCK_ESTIMATE * 1000; // estimate
+  // not used because the actual average at any time is always closer to 157.5
+  //const SECONDS_PER_BLOCK_ESTIMATE = 155;
+  DashGov._AVG_SECS_PER_BLOCK = 157.5816652623977;
 
-  const MONTHLY_SUPERBLOCK_01_DATE = "2017-03-05T20:16:00Z";
+  // used to calculate ~5 year (~60 month) averages
+  const MONTHLY_SUPERBLOCK_01_DATE = "2017-03-05T20:16:05Z";
   const MONTHLY_SUPERBLOCK_01 = 631408;
-  const MONTHLY_SUPERBLOCK_61_DATE = "2022-02-26T03:53:00Z";
+  const MONTHLY_SUPERBLOCK_61_DATE = "2022-02-26T03:53:02Z";
   const MONTHLY_SUPERBLOCK_61 = 1628368;
-  const ERR_INCOMPLETE_BLOCK =
-    "both block and time must be given for snapshot calculations";
 
   /**
-   * @typedef Snapshot
-   * @prop {Uint53} block - the block to be used for calculation
-   * @prop {Uint53} ms - the time of that block in ms
-   */
-
-  /**
-   * @param {Snapshot} [snapshot]
+   * @param {Snapshot} snapshot
    * @returns {Float64} - fractional seconds
    */
   GObj.measureSecondsPerBlock = function (snapshot) {
-    if (!snapshot) {
-      snapshot = { ms: 0, block: 0 };
-    }
-
-    if (!snapshot.ms) {
-      if (snapshot.block) {
-        throw new Error(ERR_INCOMPLETE_BLOCK);
-      }
-      let d = new Date(MONTHLY_SUPERBLOCK_61_DATE);
-      snapshot.ms = d.valueOf();
-      snapshot.block = MONTHLY_SUPERBLOCK_61;
-    } else {
-      if (!snapshot.block) {
-        throw new Error(ERR_INCOMPLETE_BLOCK);
-      }
-    }
-
-    let firstSuperblockDate = new Date(MONTHLY_SUPERBLOCK_01_DATE);
     let blockDelta = snapshot.block - MONTHLY_SUPERBLOCK_01;
-    let timeDelta = snapshot.ms - firstSuperblockDate.valueOf();
+    let timeDelta = snapshot.ms - Date.parse(MONTHLY_SUPERBLOCK_01_DATE);
     let msPerBlock = timeDelta / blockDelta;
     let sPerBlock = msPerBlock / 1000;
-
-    // let sPerBlockF = sPerBlock.toFixed(1);
-    // sPerBlock = parseFloat(sPerBlockF);
 
     return sPerBlock;
   };
 
-  GObj.estimateFutureBlocks = function (
-    now = Date.now(),
-    currentBlock = 0,
-    secondsPerBlock = 0,
-    cycles = 3,
-  ) {
-    if (!currentBlock) {
-      let d = new Date(MONTHLY_SUPERBLOCK_61_DATE);
-      let then = d.valueOf();
-      let spb = GObj.measureSecondsPerBlock({
+  /**
+   * @param {Snapshot} [snapshot] - defaults to monthly superblock 61
+   */
+  GObj.estimateSecondsPerBlock = function (snapshot) {
+    if (!snapshot) {
+      snapshot = {
         block: MONTHLY_SUPERBLOCK_61,
-        ms: then,
-      });
-      let delta = now - then;
-      let deltaS = delta / 1000;
-      let blocks = deltaS / spb;
-      currentBlock = MONTHLY_SUPERBLOCK_61 + blocks;
-      if (!secondsPerBlock) {
-        secondsPerBlock = spb;
-      }
+        ms: Date.parse(MONTHLY_SUPERBLOCK_61_DATE),
+      };
     }
 
+    let spb = GObj.measureSecondsPerBlock(snapshot);
+    return spb;
+  };
+
+  /**
+   * @param {Uint53} ms - the current time
+   * @param {Float64} secondsPerBlock
+   */
+  GObj.estimateBlockHeight = function (ms, secondsPerBlock) {
+    let then = Date.parse(MONTHLY_SUPERBLOCK_61_DATE);
+    let delta = ms - then;
+    let deltaS = delta / 1000;
+    let blocks = deltaS / secondsPerBlock;
+    blocks = Math.round(blocks);
+
+    let height = MONTHLY_SUPERBLOCK_61 + blocks;
+    return height;
+  };
+
+  /**
+   * Note: since we're dealing with estimates that are typically reliable
+   *       within an hour (and often even within 15 minutes), this may
+   *       generate more results than it presents.
+   * @param {Uint8} [cycles] - 3 by default
+   * @param {Snapshot?} [snapshot]
+   * @param {Uint32} [proposalLeadtime] - default 3 days in ms
+   * @param {Float64} [secondsPerBlock] - typically close to 157.6
+   * @returns {Estimates} - the last, due, and upcoming proposal cycles
+   */
+  GObj.estimateProposalCycles = function (
+    cycles = 3,
+    snapshot = null,
+    secondsPerBlock = 0,
+    proposalLeadtime = PROPOSAL_LEAD_MS,
+  ) {
+    let now = snapshot?.ms || Date.now();
+    let currentBlock = snapshot?.block;
     if (!secondsPerBlock) {
-      secondsPerBlock = GObj.measureSecondsPerBlock({
-        block: currentBlock,
-        ms: now,
-      });
+      if (currentBlock) {
+        snapshot = { block: currentBlock, ms: now };
+      }
+      secondsPerBlock = GObj.measureSecondsPerBlock(snapshot);
+    }
+    if (!currentBlock) {
+      currentBlock = GObj.estimateBlockHeight(now, secondsPerBlock);
     }
 
     /** @type {Array<Estimate>} */
     let estimates = [];
-    for (let i = -1; i < cycles; i += 1) {
-      let estimate = GObj.estimateNthGovCycle(
+    for (let i = 0; i <= cycles + 1; i += 1) {
+      let estimate = GObj.estimateNthNextGovCycle(
         { block: currentBlock, ms: now },
         secondsPerBlock,
         i,
@@ -276,23 +308,78 @@ var DashGov = ("object" === typeof module && exports) || {};
       estimates.push(estimate);
     }
 
-    return estimates;
+    {
+      /** @type {Estimate} */
+      //@ts-ignore - we know there is at least one (past) estimate
+      let last = estimates.shift();
+
+      /** @type {Estimate?} */
+      let lameduck = null;
+      if (estimates.length) {
+        if (estimates[0].voteDeltaMs < proposalLeadtime) {
+          //@ts-ignore - we just checked the length
+          lameduck = estimates.shift();
+        } else {
+          // lose the extra cycle
+          void estimates.pop();
+        }
+      }
+      let upcoming = estimates;
+
+      return {
+        last,
+        lameduck,
+        upcoming,
+      };
+    }
   };
 
   /**
-   * @typedef Estimate
-   * @prop {Uint53} secondsPerBlock
-   * @prop {Uint53} voteHeight
-   * @prop {Uint53} voteDelta
-   * @prop {String} voteIso - date in ISO format
-   * @prop {Uint53} voteMs
-   * @prop {Uint53} voteDeltaMs
-   * @prop {Uint53} superblockHeight
-   * @prop {Uint53} superblockDelta
-   * @prop {String} superblockIso - date in ISO format
-   * @prop {Uint53} superblockMs
-   * @prop {Uint53} superblockDeltaMs
+   * @param {Snapshot} snapshot
+   * @param {Float64} secondsPerBlock
+   * @param {Uint53} offset - how many superblocks in the future
+   * @returns {Estimate} - details about the current governance cycle
    */
+  GObj.estimateNthNextGovCycle = function (
+    snapshot,
+    secondsPerBlock,
+    offset = 0,
+  ) {
+    if (!secondsPerBlock) {
+      secondsPerBlock = GObj.estimateSecondsPerBlock(snapshot);
+    }
+
+    let superblockHeight = GObj.getNthNextSuperblock(snapshot.block, offset);
+
+    let superblockDelta = superblockHeight - snapshot.block;
+    let superblockDeltaMs = superblockDelta * secondsPerBlock * 1000;
+    let voteDeltaMs = VOTE_LEAD_BLOCKS * secondsPerBlock * 1000;
+
+    let d = new Date(snapshot.ms);
+    d.setUTCMilliseconds(0);
+
+    d.setUTCMilliseconds(superblockDeltaMs);
+    let sbms = d.valueOf();
+    let sbts = d.toISOString();
+
+    d.setUTCMilliseconds(-voteDeltaMs);
+    let vtms = d.valueOf();
+    let vtts = d.toISOString();
+
+    return {
+      // TODO split into objects
+      voteHeight: superblockHeight - VOTE_LEAD_BLOCKS,
+      voteIso: vtts,
+      voteMs: vtms,
+      voteDelta: superblockDelta - VOTE_LEAD_BLOCKS,
+      voteDeltaMs: superblockDeltaMs - voteDeltaMs,
+      superblockHeight: superblockHeight,
+      superblockDelta: superblockDelta,
+      superblockIso: sbts,
+      superblockMs: sbms,
+      superblockDeltaMs: superblockDeltaMs,
+    };
+  };
 
   /**
    * @param {Uint53} height
@@ -307,52 +394,6 @@ var DashGov = ("object" === typeof module && exports) || {};
     let superblockHeight = superblockCount * SUPERBLOCK_INTERVAL;
 
     return superblockHeight;
-  };
-
-  /**
-   * @param {Snapshot} snapshot
-   * @param {Float64} secondsPerBlock
-   * @param {Uint53} offset - how many superblocks in the future
-   * @returns {Estimate} - details about the current governance cycle
-   */
-  GObj.estimateNthGovCycle = function (
-    { block, ms },
-    secondsPerBlock,
-    offset = 0,
-  ) {
-    let blockOffset = offset * SUPERBLOCK_INTERVAL;
-    let blockTarget = block + blockOffset;
-    let superblockHeight = GObj.getNthNextSuperblock(blockTarget, offset);
-
-    let superblockDelta = superblockHeight - block;
-    // let superblockDeltaMs = superblockDelta * SECONDS_PER_BLOCK_ESTIMATE * 1000;
-    let superblockDeltaMs = superblockDelta * secondsPerBlock * 1000;
-
-    console.log(ms, superblockDeltaMs);
-    let d = new Date(ms);
-    d.setUTCMilliseconds(0);
-
-    d.setUTCMilliseconds(superblockDeltaMs);
-    let sbms = d.valueOf();
-    let sbts = d.toISOString();
-
-    d.setUTCMilliseconds(-VOTE_OFFSET_MS);
-    let vtms = d.valueOf();
-    let vtts = d.toISOString();
-
-    return {
-      secondsPerBlock: secondsPerBlock,
-      voteHeight: superblockHeight - VOTE_OFFSET_BLOCKS,
-      voteIso: vtts,
-      voteMs: vtms,
-      voteDelta: superblockDelta - VOTE_OFFSET_BLOCKS,
-      voteDeltaMs: superblockDeltaMs - VOTE_OFFSET_MS,
-      superblockHeight: superblockHeight,
-      superblockDelta: superblockDelta,
-      superblockIso: sbts,
-      superblockMs: sbms,
-      superblockDeltaMs: superblockDeltaMs,
-    };
   };
 
   //@ts-ignore
