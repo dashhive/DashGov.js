@@ -242,7 +242,6 @@ var DashGov = ("object" === typeof module && exports) || {};
     secondsPerBlock = 0,
     cycles = 3,
   ) {
-    console.log("CURRENT HEIGHT:", currentBlock);
     if (!currentBlock) {
       let d = new Date(MONTHLY_SUPERBLOCK_61_DATE);
       let then = d.valueOf();
@@ -269,7 +268,6 @@ var DashGov = ("object" === typeof module && exports) || {};
     /** @type {Array<Estimate>} */
     let estimates = [];
     for (let i = -1; i < cycles; i += 1) {
-      console.log("HEIGHT:", currentBlock);
       let estimate = GObj.estimateNthGovCycle(
         { block: currentBlock, ms: now },
         secondsPerBlock,
@@ -298,15 +296,14 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   /**
    * @param {Uint53} height
+   * @param {Uint53} offset - 0 (current / previous), 1 (next), 2, 3, nth
    * @returns {Uint53} - the superblock after the given height
    */
-  GObj.getNextSuperblock = function (height) {
-    let isSuperblock = height % SUPERBLOCK_INTERVAL === 0;
-    if (isSuperblock) {
-      height += SUPERBLOCK_INTERVAL;
-    }
+  GObj.getNthNextSuperblock = function (height, offset) {
     let superblockCount = height / SUPERBLOCK_INTERVAL;
-    superblockCount = Math.ceil(superblockCount);
+    superblockCount = Math.floor(superblockCount);
+
+    superblockCount += offset;
     let superblockHeight = superblockCount * SUPERBLOCK_INTERVAL;
 
     return superblockHeight;
@@ -325,7 +322,7 @@ var DashGov = ("object" === typeof module && exports) || {};
   ) {
     let blockOffset = offset * SUPERBLOCK_INTERVAL;
     let blockTarget = block + blockOffset;
-    let superblockHeight = GObj.getNextSuperblock(blockTarget);
+    let superblockHeight = GObj.getNthNextSuperblock(blockTarget, offset);
 
     let superblockDelta = superblockHeight - block;
     // let superblockDeltaMs = superblockDelta * SECONDS_PER_BLOCK_ESTIMATE * 1000;
