@@ -37,4 +37,4 @@ for (let test of tests) {
   }
 }
 
-console.info(`PASS: DashGov.getNthNextSuperblock(height)`);
+console.info(`PASS: DashGov.getNthNextSuperblock(height, offset)`);
