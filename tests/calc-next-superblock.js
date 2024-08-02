@@ -2,22 +2,34 @@
 
 let DashGov = require("../");
 
+let sb = 2126848;
 let tests = [
-  [
-    2115106 - DashGov.SUPERBLOCK_INTERVAL,
-    2126848 - DashGov.SUPERBLOCK_INTERVAL,
-  ],
-  [2115106, 2126848],
-  [2126847, 2126848],
-  [2126848, 2126848 + DashGov.SUPERBLOCK_INTERVAL],
-  [2126849, 2126848 + DashGov.SUPERBLOCK_INTERVAL],
+  // Previous Cycle (past)
+  [-1, sb - 2, sb - 2 * DashGov.SUPERBLOCK_INTERVAL],
+  [-1, sb - 1, sb - 2 * DashGov.SUPERBLOCK_INTERVAL],
+  [-1, sb + 0, sb - DashGov.SUPERBLOCK_INTERVAL],
+  [-1, sb + 1, sb - DashGov.SUPERBLOCK_INTERVAL],
+  [-1, sb + 2, sb - DashGov.SUPERBLOCK_INTERVAL],
+  // Current Cycle (past / exact present)
+  [0, sb - 2, sb - DashGov.SUPERBLOCK_INTERVAL],
+  [0, sb - 1, sb - DashGov.SUPERBLOCK_INTERVAL],
+  [0, sb + 0, sb],
+  [0, sb + 1, sb],
+  [0, sb + 2, sb],
+  // Upcoming Cycle
+  [+1, sb - 2, sb],
+  [+1, sb - 1, sb],
+  [+1, sb + 0, sb + DashGov.SUPERBLOCK_INTERVAL],
+  [+1, sb + 1, sb + DashGov.SUPERBLOCK_INTERVAL],
+  [+1, sb + 2, sb + DashGov.SUPERBLOCK_INTERVAL],
 ];
 
 for (let test of tests) {
-  let height = test[0];
-  let expected = test[1];
+  let offset = test[0];
+  let height = test[1];
+  let expected = test[2];
 
-  let superblock = DashGov.getNextSuperblock(height);
+  let superblock = DashGov.getNthNextSuperblock(height, offset);
   if (superblock !== expected) {
     throw new Error(
       `expected superblock for height ${height} to be ${expected}, but got ${superblock}`,
@@ -25,4 +37,4 @@ for (let test of tests) {
   }
 }
 
-console.info(`PASS: DashGov.getNextSuperblock(height)`);
+console.info(`PASS: DashGov.getNthNextSuperblock(height)`);
