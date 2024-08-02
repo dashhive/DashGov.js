@@ -183,6 +183,7 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   // TODO move to a nice place
   const SUPERBLOCK_INTERVAL = 16616; // actual
+  DashGov.SUPERBLOCK_INTERVAL = SUPERBLOCK_INTERVAL;
   const SECONDS_PER_BLOCK_ESTIMATE = 155; // estimate (measured as ~157.64)
 
   const VOTE_OFFSET_BLOCKS = 1662; // actual
@@ -206,6 +207,10 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @returns {Float64} - fractional seconds
    */
   GObj.measureSecondsPerBlock = function (snapshot) {
+    if (!snapshot) {
+      snapshot = { ms: 0, block: 0 };
+    }
+
     if (!snapshot.ms) {
       if (snapshot.block) {
         throw new Error(ERR_INCOMPLETE_BLOCK);
@@ -235,7 +240,9 @@ var DashGov = ("object" === typeof module && exports) || {};
     now = Date.now(),
     currentBlock = 0,
     secondsPerBlock = 0,
+    cycles = 3,
   ) {
+    console.log("CURRENT HEIGHT:", currentBlock);
     if (!currentBlock) {
       let d = new Date(MONTHLY_SUPERBLOCK_61_DATE);
       let then = d.valueOf();
@@ -259,17 +266,73 @@ var DashGov = ("object" === typeof module && exports) || {};
       });
     }
 
-    let superblockHeight = currentBlock / SUPERBLOCK_INTERVAL;
-    superblockHeight = Math.ceil(superblockHeight);
-    superblockHeight *= SUPERBLOCK_INTERVAL;
+    /** @type {Array<Estimate>} */
+    let estimates = [];
+    for (let i = -1; i < cycles; i += 1) {
+      console.log("HEIGHT:", currentBlock);
+      let estimate = GObj.estimateNthGovCycle(
+        { block: currentBlock, ms: now },
+        secondsPerBlock,
+        i,
+      );
+      estimates.push(estimate);
+    }
 
-    let superblockDelta = superblockHeight - currentBlock;
+    return estimates;
+  };
+
+  /**
+   * @typedef Estimate
+   * @prop {Uint53} secondsPerBlock
+   * @prop {Uint53} voteHeight
+   * @prop {Uint53} voteDelta
+   * @prop {String} voteIso - date in ISO format
+   * @prop {Uint53} voteMs
+   * @prop {Uint53} voteDeltaMs
+   * @prop {Uint53} superblockHeight
+   * @prop {Uint53} superblockDelta
+   * @prop {String} superblockIso - date in ISO format
+   * @prop {Uint53} superblockMs
+   * @prop {Uint53} superblockDeltaMs
+   */
+
+  /**
+   * @param {Uint53} height
+   * @returns {Uint53} - the superblock after the given height
+   */
+  GObj.getNextSuperblock = function (height) {
+    let isSuperblock = height % SUPERBLOCK_INTERVAL === 0;
+    if (isSuperblock) {
+      height += SUPERBLOCK_INTERVAL;
+    }
+    let superblockCount = height / SUPERBLOCK_INTERVAL;
+    superblockCount = Math.ceil(superblockCount);
+    let superblockHeight = superblockCount * SUPERBLOCK_INTERVAL;
+
+    return superblockHeight;
+  };
+
+  /**
+   * @param {Snapshot} snapshot
+   * @param {Float64} secondsPerBlock
+   * @param {Uint53} offset - how many superblocks in the future
+   * @returns {Estimate} - details about the current governance cycle
+   */
+  GObj.estimateNthGovCycle = function (
+    { block, ms },
+    secondsPerBlock,
+    offset = 0,
+  ) {
+    let blockOffset = offset * SUPERBLOCK_INTERVAL;
+    let blockTarget = block + blockOffset;
+    let superblockHeight = GObj.getNextSuperblock(blockTarget);
+
+    let superblockDelta = superblockHeight - block;
     // let superblockDeltaMs = superblockDelta * SECONDS_PER_BLOCK_ESTIMATE * 1000;
     let superblockDeltaMs = superblockDelta * secondsPerBlock * 1000;
-    // let voteEndDelta = superblockDelta - VOTE_OFFSET;
-    // let voteEndDeltaMs = voteEndDelta * SECONDS_PER_BLOCK_ESTIMATE * 1000;
 
-    let d = new Date();
+    console.log(ms, superblockDeltaMs);
+    let d = new Date(ms);
     d.setUTCMilliseconds(0);
 
     d.setUTCMilliseconds(superblockDeltaMs);
@@ -286,9 +349,9 @@ var DashGov = ("object" === typeof module && exports) || {};
       voteIso: vtts,
       voteMs: vtms,
       voteDelta: superblockDelta - VOTE_OFFSET_BLOCKS,
-      voteDeltaMs: superblockDelta,
+      voteDeltaMs: superblockDeltaMs - VOTE_OFFSET_MS,
       superblockHeight: superblockHeight,
-      superblockDelta: superblockDeltaMs,
+      superblockDelta: superblockDelta,
       superblockIso: sbts,
       superblockMs: sbms,
       superblockDeltaMs: superblockDeltaMs,
