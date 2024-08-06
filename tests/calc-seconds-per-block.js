@@ -12,4 +12,4 @@ if (secondsPerBlock !== DashGov._AVG_SECS_PER_BLOCK) {
 console.info(
   `PASS: DashGov.estimateSecondsPerBlock() == ${DashGov._AVG_SECS_PER_BLOCK}`,
 );
-console.info(`PASS: DashGov.measureSecondsPerBlock(snapshot)`);
+console.info(`PASS: DashGov.measureSecondsPerBlock(snapshot, root)`);
