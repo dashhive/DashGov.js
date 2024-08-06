@@ -8,7 +8,6 @@
 
 /**
  * @typedef Estimate
- * @prop {Uint53} secondsPerBlock
  * @prop {Uint53} voteHeight
  * @prop {Uint53} voteDelta
  * @prop {String} voteIso - date in ISO format
@@ -39,6 +38,13 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   // USAGE
   //   node ./gobject-hash-debugger.js
+
+  const LITTLE_ENDIAN = true;
+  const VARINT_8_MAX = 252;
+  const UINT_16_MAX = 65535;
+  const UINT_32_MAX = 4294967295;
+
+  let textEncoder = new TextEncoder();
 
   GObj._type = 0b0000010; // from SER_GETHASH (bitwise enum)
   GObj._typeBytes = Uint8Array.from([0b0000010]);
@@ -71,37 +77,47 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {number} nSize
    */
   GObj.utils.toVarIntSize = function (nSize) {
-    return nSize < 253
-      ? 0
-      : nSize <= 2 ** 16 - 1
-        ? 2
-        : nSize <= 2 ** 32 - 1
-          ? 4
-          : 8;
+    if (nSize <= VARINT_8_MAX) {
+      return 1;
+    }
+
+    if (nSize <= UINT_16_MAX) {
+      return 3;
+    }
+
+    if (nSize <= UINT_32_MAX) {
+      return 5;
+    }
+
+    return 9;
   };
 
   /**
-   * Writes `nSize` out to `dv` in a variable-length encoding.
+   * Writes `n` out to `dv` in a variable-length encoding.
    * Assumes you want to write out the data of `nSize` length to `dv` afterwards.
    * @param {DataView} dv
-   * @param {number} offset
-   * @param {number} nSize
+   * @param {Number} offset
+   * @param {Number} n
    */
-  function WriteCompactSize(
-    dv,
-    offset,
-    nSize,
-    s = GObj.utils.toVarIntSize(nSize),
-  ) {
-    switch (s) {
-      case 2:
-      case 4:
-      case 8:
-        dv.setBigUint64(offset + 1, BigInt(nSize), true);
-        nSize = 252 + Math.log2(s);
-      default:
-        dv.setUint8(offset, nSize);
+  function writeVarInt(dv, offset, n) {
+    if (n <= VARINT_8_MAX) {
+      dv.setUint8(offset, n);
+      return;
     }
+
+    let size;
+    if (n <= UINT_16_MAX) {
+      size = 253;
+    } else if (n <= UINT_32_MAX) {
+      size = 254;
+    } else {
+      size = 255;
+    }
+    dv.setUint8(offset, size);
+
+    offset += 1;
+    let bigN = BigInt(n);
+    dv.setBigUint64(offset, bigN, LITTLE_ENDIAN);
   }
 
   /**
@@ -131,7 +147,6 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @prop {BigInt|Uint53} time - seconds since epoch (8 bytes)
    * @prop {String} hexJson - variable
    * @prop {null} [masternodeOutpoint] - ??
-   * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
    * @prop {null} [collateralTxId] - 32 bytes of 0x00s
    * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
    * @prop {null} [signature] - 0 bytes
@@ -147,14 +162,13 @@ var DashGov = ("object" === typeof module && exports) || {};
     time,
     hexJson,
   }) {
-    const compactSizeExtraOffset = GObj.utils.toVarIntSize(hexJson.length);
+    const varIntSize = GObj.utils.toVarIntSize(hexJson.length);
 
     const dataLen =
       32 + // hashParent
       4 + // revision
       8 + // time
-      1 +
-      compactSizeExtraOffset + // compacted length header for HexStr(vchData)
+      varIntSize + // compacted length header for HexStr(vchData)
       hexJson.length + // HexStr(vchData)
       32 +
       4 + // masterNodeOutpoint (not used, so these bytes are the defaults)
@@ -172,39 +186,37 @@ var DashGov = ("object" === typeof module && exports) || {};
     }
     offset += 32;
 
-    dv.setInt32(offset, revision, true);
+    dv.setInt32(offset, revision, LITTLE_ENDIAN);
     offset += 4;
 
-    dv.setBigInt64(offset, BigInt(time), true);
+    let bigTime = BigInt(time);
+    dv.setBigInt64(offset, bigTime, LITTLE_ENDIAN);
     offset += 8;
 
-    // Write out hexJson, with a compacted size in front
-    WriteCompactSize(dv, offset, hexJson.length, compactSizeExtraOffset);
-    offset += 1 + compactSizeExtraOffset;
-    bytes.set(new TextEncoder().encode(hexJson), offset);
+    void writeVarInt(dv, offset, hexJson.length);
+    offset += varIntSize;
+    let hexJsonBytes = textEncoder.encode(hexJson);
+    bytes.set(hexJsonBytes, offset);
     offset += hexJson.length;
 
     {
-      // masternodeOutpoint exists in the C++ object and needs to be included,
-      // however, it is not filled with data for our purposes.
-
-      // Write out empty masternodeHash
+      // masternodeOutpointId (hash + index) is required for legacy reasons,
+      // but not used for collateral serialization
       offset += 32;
 
       // Write out default mastNode `n` (index)
       let masternodeOutpointIndex = 0xffffffff;
-      dv.setUint32(offset, masternodeOutpointIndex, true);
+      dv.setUint32(offset, masternodeOutpointIndex, LITTLE_ENDIAN);
       offset += 4;
 
       // adding dummy values here to match old hashing
       offset += 1;
-      dv.setUint32(offset, 0xffffffff, true);
+      dv.setUint32(offset, 0xffffffff, LITTLE_ENDIAN);
       offset += 4;
     }
 
-    // In the C++ version, `vchSig` must have its length written out in `WriteCompactSize` fashion.
-    // Then, if the length is greater than 0, `vchSig` is written out too.
-    // However, we never need a signature here, so we just write out a `0`.
+    // the trailing 0 byte represents the VarInt Size of the vchSig,
+    // which is always 0 for collateral serialization
     offset += 1;
     return bytes;
   };
@@ -403,6 +415,7 @@ if ("object" === typeof module) {
   module.exports = DashGov;
 }
 
+/** @typedef {bigint} BigInt */
 /** @typedef {Number} Uint8 */
 /** @typedef {Number} Uint32 */
 /** @typedef {Number} Uint53 */
