@@ -41,9 +41,9 @@ async function main() {
   let selected = DashGov.selectEstimates(estimates, startPeriod, endPeriod);
   let gobjData = DashGov.proposal.draftJson(selected, {
     name,
-    url,
     payment_address,
     payment_amount,
+    url,
   });
 
   let now = Date.now();
@@ -53,8 +53,8 @@ async function main() {
   let gobjCollateralBytes = DashGov.serializeForCollateralTx(gobj);
   let gobjCollateralHex = DashGov.utils.bytesToHex(gobjCollateralBytes);
 
-  let gobjHashBytes = await DashGov.proposal.doubleSha256(gobjCollateralBytes);
-  let gobjId = DashGov.utils.bytesToHex(gobjHashBytes);
+  let gobjHashBytes = await DashGov.utils.doubleSha256(gobjCollateralBytes);
+  let gobjId = DashGov.utils.hashToId(gobjHashBytes);
 
   console.log(
     "gobject prepare",
