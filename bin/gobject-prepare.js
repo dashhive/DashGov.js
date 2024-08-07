@@ -209,7 +209,7 @@ async function main() {
     );
     let totalDash = cycleCount * dashAmount;
 
-    console.log();
+    console.log("");
     console.log(
       `Proposal Period: ${selected.startIso} - ${selected.endIso} (~${proposalDeltaStr} days)`,
     );
@@ -219,7 +219,7 @@ async function main() {
     console.log(
       `Payment Period:  ${selected.superblockIso} - ${selected.superblockIso} (~${paymentDeltaStr} days)`,
     );
-    console.log();
+    console.log("");
     console.log(`Total Dash: ${totalDash} = ${dashAmount} x ${cycleCount}`);
   }
 
@@ -353,6 +353,8 @@ async function main() {
       method: "sendrawtransaction",
       params: [txInfoSigned.transaction],
     });
+    console.log("");
+    console.log("Transaction sent:");
     console.log(txResult);
   }
 
@@ -374,12 +376,14 @@ async function main() {
         },
       );
     if (txResult) {
+      console.log("");
       console.log(`TxOutProof`);
       console.log(txResult);
       let jsonResult = await rpc.request("/", {
         method: "getrawtransaction",
         params: [txid, 1],
       });
+      console.log("");
       console.log(`Tx`);
       console.log(jsonResult);
       break;
@@ -441,6 +445,8 @@ async function main() {
   for (;;) {
     let gobjResult = await submit();
     if (gobjResult) {
+      console.log("");
+      console.log("gobject submit result:");
       console.log(gobjResult);
       break;
     }
