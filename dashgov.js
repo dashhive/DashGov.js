@@ -1,6 +1,39 @@
 /** @typedef {any} Gov - TODO */
 
 /**
+ * This serialization is used exclusively for creating a hash to place in the OP_RETURN memo
+ * of the collateral transaction.
+ *
+ * As such, it does NOT match the MN gobject serialization.
+ *   - NO collateral tx id (this is for that)
+ *   - NO masternodeOutpoint (this is for that)
+ *   - NO bls data signature (happens on MN)
+ *
+ * However, it does include all pieces of data required to verify authenticity from proposer.
+ * @typedef GObject
+ * @prop {0} [hashParent] - not implemented, Uint8Array of 0s (32 bytes)
+ * @prop {1} [revision] - not implemented, always 1 (4 bytes)
+ * @prop {BigInt|Uint53} time - seconds since epoch (8 bytes)
+ * @prop {String} dataHex - variable
+ * @prop {null} [masternodeOutpoint] - ??
+ * @prop {null} [collateralTxId] - 32 bytes of 0x00s
+ * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
+ * @prop {null} [signature] - 0 bytes
+ * @returns {Uint8Array}
+ */
+
+/**
+ * @typedef GObjectData
+ * @prop {Uint53} end_epoch - whole seconds since epoch (like web-standard `exp`)
+ * @prop {String} name - kebab case (no spaces)
+ * @prop {String} payment_address - base58-encoded p2pkh
+ * @prop {Uint32} payment_amount - in whole DASH
+ * @prop {Uint53} start_epoch - whole seconds since epoch (like web-standard `iat`)
+ * @prop {Uint32} type - TODO
+ * @prop {String} url - conventionally dashcentral, with page the same as the 'name'
+ */
+
+/**
  * @typedef Snapshot
  * @prop {Uint53} block - the block to be used for calculation
  * @prop {Uint53} ms - the time of that block in ms
@@ -8,6 +41,8 @@
 
 /**
  * @typedef Estimate
+ * @prop {String} startIso
+ * @prop {Uint53} startMs - suggested time to make proposal visible
  * @prop {Uint53} voteHeight
  * @prop {Uint53} voteDelta
  * @prop {String} voteIso - date in ISO format
@@ -18,6 +53,8 @@
  * @prop {String} superblockIso - date in ISO format
  * @prop {Uint53} superblockMs
  * @prop {Uint53} superblockDeltaMs
+ * @prop {String} endIso
+ * @prop {Uint53} endMs - suggested time to make proposal non-visible
  */
 
 /**
@@ -70,22 +107,24 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   /**
-   * Returns the number of extra bytes needed to encode the variable-length `nSize`.
-   * If it is less than 253, we will store `nSize` in just the one (assumed) byte.
-   * Otherwise, we scale up according to the smallest power of 2 integer size it can fit in. (u16, u32, u64)
-   * Returns the number of bytes after the first byte that we will need to preserve after `WriteCompactSize` is done.
-   * @param {number} nSize
+   * Gets the number of bytes to store the number with VarInt "compression"
+   *   - 1 byte for 0-252 (Uint8)
+   *   - 1+2 bytes for 253 + Uint16
+   *   - 1+4 bytes for 254 + Uint32
+   *   - 1+8 bytes for 255 + Uint64
+   * @param {Number} n
+   * @returns {1|3|5|9}
    */
-  GObj.utils.toVarIntSize = function (nSize) {
-    if (nSize <= VARINT_8_MAX) {
+  GObj.utils.toVarIntSize = function (n) {
+    if (n <= VARINT_8_MAX) {
       return 1;
     }
 
-    if (nSize <= UINT_16_MAX) {
+    if (n <= UINT_16_MAX) {
       return 3;
     }
 
-    if (nSize <= UINT_32_MAX) {
+    if (n <= UINT_32_MAX) {
       return 5;
     }
 
@@ -93,11 +132,11 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   /**
-   * Writes `n` out to `dv` in a variable-length encoding.
-   * Assumes you want to write out the data of `nSize` length to `dv` afterwards.
+   * Writes `n` to `DataView` as a VarInt ("compressed" int).
    * @param {DataView} dv
    * @param {Number} offset
    * @param {Number} n
+   * @returns void
    */
   function writeVarInt(dv, offset, n) {
     if (n <= VARINT_8_MAX) {
@@ -121,55 +160,22 @@ var DashGov = ("object" === typeof module && exports) || {};
   }
 
   /**
-   * @typedef GObjectData
-   * @prop {Uint53} end_epoch - whole seconds since epoch (like web-standard `exp`)
-   * @prop {String} name - kebab case (no spaces)
-   * @prop {String} payment_address - base58-encoded p2pkh
-   * @prop {String} payment_amount - in whole DASH
-   * @prop {Uint53} start_epoch - whole seconds since epoch (like web-standard `iat`)
-   * @prop {Uint32} type - TODO
-   * @prop {Uint32} url - conventionally dashcentral, with page the same as the 'name'
-   */
-
-  /**
-   * This serialization is used exclusively for creating a hash to place in the OP_RETURN memo
-   * of the collateral transaction.
-   *
-   * As such, it does NOT match the MN gobject serialization.
-   *   - NO collateral tx id (this is for that)
-   *   - NO masternodeOutpoint (this is for that)
-   *   - NO bls data signature (happens on MN)
-   *
-   * However, it does include all pieces of data required to verify authenticity from proposer.
-   * @typedef GObject
-   * @prop {null} [hashParent] - not implemented, Uint8Array of 0s (32 bytes)
-   * @prop {1} [revision] - not implemented, always 1 (4 bytes)
-   * @prop {BigInt|Uint53} time - seconds since epoch (8 bytes)
-   * @prop {String} hexJson - variable
-   * @prop {null} [masternodeOutpoint] - ??
-   * @prop {null} [collateralTxId] - 32 bytes of 0x00s
-   * @prop {null} [collateralTxOutputIndex] - 4 bytes of 0xffs
-   * @prop {null} [signature] - 0 bytes
-   * @returns {Uint8Array}
-   */
-
-  /**
    * @param {GObject} gobj
    */
   GObj.serializeForCollateralTx = function ({
-    hashParent,
+    hashParent = 0,
     revision = 1,
     time,
-    hexJson,
+    dataHex,
   }) {
-    const varIntSize = GObj.utils.toVarIntSize(hexJson.length);
+    const varIntSize = GObj.utils.toVarIntSize(dataHex.length);
 
     const dataLen =
       32 + // hashParent
       4 + // revision
       8 + // time
       varIntSize + // compacted length header for HexStr(vchData)
-      hexJson.length + // HexStr(vchData)
+      dataHex.length + // HexStr(vchData)
       32 +
       4 + // masterNodeOutpoint (not used, so these bytes are the defaults)
       1 +
@@ -193,11 +199,11 @@ var DashGov = ("object" === typeof module && exports) || {};
     dv.setBigInt64(offset, bigTime, LITTLE_ENDIAN);
     offset += 8;
 
-    void writeVarInt(dv, offset, hexJson.length);
+    void writeVarInt(dv, offset, dataHex.length);
     offset += varIntSize;
-    let hexJsonBytes = textEncoder.encode(hexJson);
-    bytes.set(hexJsonBytes, offset);
-    offset += hexJson.length;
+    let dataHexBytes = textEncoder.encode(dataHex);
+    bytes.set(dataHexBytes, offset);
+    offset += dataHex.length;
 
     {
       // masternodeOutpointId (hash + index) is required for legacy reasons,
@@ -224,7 +230,11 @@ var DashGov = ("object" === typeof module && exports) || {};
   // TODO move to a nice place
   const SUPERBLOCK_INTERVAL = 16616;
   const VOTE_LEAD_BLOCKS = 1662;
+
+  // these are chosen by reason rather than by specification
   const PROPOSAL_LEAD_MS = 6 * 24 * 60 * 60 * 1000;
+  const START_EPOCH_MS_BEFORE_VOTE = 23 * 24 * 60 * 60 * 1000;
+  const END_EPOCH_MS_AFTER_SUPERBLOCK = 4 * 24 * 60 * 60 * 1000; // after superblock
   DashGov.PROPOSAL_LEAD_MS = PROPOSAL_LEAD_MS;
   DashGov.SUPERBLOCK_INTERVAL = SUPERBLOCK_INTERVAL;
 
@@ -240,11 +250,12 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   /**
    * @param {Snapshot} snapshot
+   * @param {Snapshot} root
    * @returns {Float64} - fractional seconds
    */
-  GObj.measureSecondsPerBlock = function (snapshot) {
-    let blockDelta = snapshot.block - MONTHLY_SUPERBLOCK_01;
-    let timeDelta = snapshot.ms - Date.parse(MONTHLY_SUPERBLOCK_01_DATE);
+  GObj.measureSecondsPerBlock = function (snapshot, root) {
+    let blockDelta = snapshot.block - root.block;
+    let timeDelta = snapshot.ms - root.ms;
     let msPerBlock = timeDelta / blockDelta;
     let sPerBlock = msPerBlock / 1000;
 
@@ -252,7 +263,8 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   /**
-   * @param {Snapshot} [snapshot] - defaults to monthly superblock 61
+   * @param {Snapshot} [snapshot] - defaults to mainnet monthly superblock 61
+   * @returns {Float64} - fractional seconds
    */
   GObj.estimateSecondsPerBlock = function (snapshot) {
     if (!snapshot) {
@@ -261,8 +273,12 @@ var DashGov = ("object" === typeof module && exports) || {};
         ms: Date.parse(MONTHLY_SUPERBLOCK_61_DATE),
       };
     }
+    let root = {
+      block: MONTHLY_SUPERBLOCK_01,
+      ms: Date.parse(MONTHLY_SUPERBLOCK_01_DATE),
+    };
 
-    let spb = GObj.measureSecondsPerBlock(snapshot);
+    let spb = GObj.measureSecondsPerBlock(snapshot, root);
     return spb;
   };
 
@@ -279,6 +295,168 @@ var DashGov = ("object" === typeof module && exports) || {};
 
     let height = MONTHLY_SUPERBLOCK_61 + blocks;
     return height;
+  };
+
+  /**
+   * @param {Estimates} estimates
+   * @param {Uint32} startPeriod
+   * @param {Uint32} endPeriod
+   */
+  GObj.selectEstimates = function (estimates, startPeriod, endPeriod) {
+    let startEstimate;
+    let endEstimate;
+
+    if (startPeriod === 0) {
+      startEstimate = estimates.lameduck;
+    } else {
+      startPeriod -= 1;
+      startEstimate = estimates.upcoming[startPeriod];
+    }
+    if (!startEstimate) {
+      throw new Error(
+        `${startPeriod} is not valid ('startPeriod' might not be a number)`,
+      );
+    }
+
+    if (endPeriod === 0) {
+      endEstimate = estimates.lameduck;
+    } else {
+      endPeriod -= 1;
+      endEstimate = estimates.upcoming[endPeriod];
+    }
+    if (!endEstimate) {
+      throw new Error(
+        `${endPeriod} is not valid ('count' might not be a number)`,
+      );
+    }
+
+    return { start: startEstimate, end: endEstimate };
+  };
+
+  GObj.proposal = {};
+
+  /**
+   * @param {Object} selected
+   * @param {Estimate} selected.start
+   * @param {Estimate} selected.end
+   * @param {DashGov.GObjectData} proposalData
+   */
+  GObj.proposal.draftJson = function (selected, proposalData) {
+    let startEpoch = selected.start.startMs / 1000;
+    startEpoch = Math.round(startEpoch);
+
+    let endEpoch = selected.end.endMs / 1000;
+    endEpoch = Math.round(endEpoch);
+
+    let normalizedData = {
+      end_epoch: Math.round(endEpoch),
+      name: "",
+      payment_address: "",
+      payment_amount: 0,
+      start_epoch: Math.round(startEpoch),
+      type: 1,
+      url: "",
+    };
+    Object.assign(normalizedData, proposalData);
+
+    return normalizedData;
+  };
+
+  /**
+   * Creates a draft object with reasonable and default values
+   * @param {Uint53} now - use Date.now(), except in testing
+   * @param {Uint53} startEpochMs - used to create a deterministic gobject time
+   * @param {GObjectData} data - will be sorted and hex-ified
+   * @param {GObject} [gobj] - override values
+   */
+  GObj.proposal.draft = function (now, startEpochMs, data, gobj) {
+    let dataHex = gobj?.dataHex || GObj.proposal.sortAndEncodeJson(data);
+    let time = GObj.proposal._selectKnownTime(now, startEpochMs);
+
+    /** @type {DashGov.GObject} */
+    let normalGObj = {
+      hashParent: 0,
+      revision: 1,
+      time: time,
+      dataHex: "",
+      masternodeOutpoint: null,
+      collateralTxId: null,
+      collateralTxOutputIndex: null,
+      signature: null,
+    };
+    Object.assign(normalGObj, gobj, { dataHex });
+
+    return normalGObj;
+  };
+
+  /**
+   * @param {DashGov.GObjectData} normalizedData
+   */
+  GObj.proposal.sortAndEncodeJson = function (normalizedData) {
+    let keys = Object.keys(normalizedData);
+    keys.sort();
+
+    /** @type {GObjectData} */
+    //@ts-ignore
+    let sortedData = {};
+    for (let key of keys) {
+      //@ts-ignore - this is the same type as normalData, but future-proofed
+      sortedData[key] = normalizedData[key];
+    }
+
+    let textEncoder = new TextEncoder();
+    let json = JSON.stringify(sortedData);
+    let jsonBytes = textEncoder.encode(json);
+    let hex = DashGov.utils.bytesToHex(jsonBytes);
+
+    return hex;
+  };
+
+  /**
+   * The arbitrary use of random times is a leading cause of lost money during
+   * the proposal process, so instead we use the 'start epoch' when appropriate,
+   * or otherwise a UTC day interval of the start epoch
+   * @param {Uint53} now
+   * @param {Uint53} startMs
+   */
+  GObj.proposal._selectKnownTime = function (now, startMs) {
+    let startEpochDate = new Date(startMs);
+    let today = new Date();
+    if (today < startEpochDate) {
+      let date = today.getUTCDate();
+      startEpochDate.setUTCFullYear(today.getUTCFullYear());
+      startEpochDate.setUTCMonth(today.getUTCMonth());
+      startEpochDate.setUTCDate(date - 1);
+    }
+    let knownTimeMs = startEpochDate.valueOf();
+    let knownSecs = knownTimeMs / 1000;
+    knownSecs = Math.floor(knownSecs);
+
+    return knownSecs;
+  };
+
+  let msToHours = 60 * 60 * 1000;
+  /**
+   * Since the estimates are only accurate to within 30 minutes anyway,
+   * and since the extra entropy on the time just makes it more difficult to read,
+   * we just get rid of it.
+   * @param {Uint53} ms
+   */
+  GObj.proposal._roundDownToHour = function (ms) {
+    let timeF = ms / msToHours;
+    let time = Math.floor(timeF);
+    ms = time * msToHours;
+    return ms;
+  };
+
+  /**
+   * @param {Uint53} ms
+   */
+  GObj.proposal._roundUpToHour = function (ms) {
+    let timeF = ms / msToHours;
+    let time = Math.ceil(timeF);
+    ms = time * msToHours;
+    return ms;
   };
 
   /**
@@ -303,7 +481,7 @@ var DashGov = ("object" === typeof module && exports) || {};
       if (currentBlock) {
         snapshot = { block: currentBlock, ms: now };
       }
-      secondsPerBlock = GObj.measureSecondsPerBlock(snapshot);
+      secondsPerBlock = GObj.estimateSecondsPerBlock(snapshot);
     }
     if (!currentBlock) {
       currentBlock = GObj.estimateBlockHeight(now, secondsPerBlock);
@@ -348,7 +526,7 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   /**
    * @param {Snapshot} snapshot
-   * @param {Float64} secondsPerBlock
+   * @param {Float64} [secondsPerBlock]
    * @param {Uint53} offset - how many superblocks in the future
    * @returns {Estimate} - details about the current governance cycle
    */
@@ -378,8 +556,18 @@ var DashGov = ("object" === typeof module && exports) || {};
     let vtms = d.valueOf();
     let vtts = d.toISOString();
 
+    let startMs = vtms - START_EPOCH_MS_BEFORE_VOTE;
+    startMs = GObj.proposal._roundDownToHour(startMs);
+    let startTime = new Date(startMs);
+
+    let endMs = sbms + END_EPOCH_MS_AFTER_SUPERBLOCK;
+    endMs = GObj.proposal._roundUpToHour(endMs);
+    let endTime = new Date(endMs);
+
     return {
       // TODO split into objects
+      startMs: startMs,
+      startIso: startTime.toISOString(),
       voteHeight: superblockHeight - VOTE_LEAD_BLOCKS,
       voteIso: vtts,
       voteMs: vtms,
@@ -390,6 +578,8 @@ var DashGov = ("object" === typeof module && exports) || {};
       superblockIso: sbts,
       superblockMs: sbms,
       superblockDeltaMs: superblockDeltaMs,
+      endMs: endMs,
+      endIso: endTime.toISOString(),
     };
   };
 
