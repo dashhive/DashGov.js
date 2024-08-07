@@ -36,7 +36,7 @@
     "@dashincubator/secp256k1": "^1.7.1-5",
     "dashkeys": "^1.1.4",
     "dashrpc": "^20.0.0",
-    "dashtx": "^0.18.1",
+    "dashtx": "^0.18.2",
     "dotenv": "^16.4.5"
   }
 }
