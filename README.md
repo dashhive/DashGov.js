@@ -47,14 +47,14 @@ let gobj = {
   // hashParent: null,
   // revision: 1, // MUST be one
   time: secs,
-  hexJson: proposalHex,
+  dataHex: proposalHex,
   // signature: null,
 };
 
 gobj = DashGov.normalize(gobj);
 
 let gobjBytes = DashGov.serializeForCollateralTx(gobj);
-let gobjOpReturn = await DashGov.doubleSha256Hash(gobjBytes);
+let gobjOpReturn = await DashGov.utils.doubleSha256(gobjBytes);
 
 let keyUtils = {
   getPrivateKey: function (info) {
@@ -81,7 +81,7 @@ let result = await RPC.request({
     gobj.hashParent,
     gobj.revision,
     gobj.time,
-    gobj.hexJson,
+    gobj.dataHex,
     txid,
   ],
 });
