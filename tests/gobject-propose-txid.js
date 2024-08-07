@@ -22,7 +22,7 @@ async function main() {
     hashParent: new Uint8Array(32),
     revision: 1,
     time: 1721275147,
-    hexJson:
+    dataHex:
       "7b2273746172745f65706f6368223a313732313237353234372c22656e645f65706f6368223a313732313238353234372c226e616d65223a22746573742d70726f706f73616c2d34222c227061796d656e745f61646472657373223a22794d374d34594a4676353868676561394655784c746a4b42704b5843736a78574e58222c227061796d656e745f616d6f756e74223a3130302c2274797065223a312c2275726c223a2268747470733a2f2f7777772e6461736863656e7472616c2e6f72672f702f746573742d70726f706f73616c2d34227d",
   };
 
@@ -40,8 +40,8 @@ async function main() {
       ["revision", 4],
       ["time", 8],
       ["hexJSONLen-header", 1],
-      ["hexJSONLen", GObj.utils.toVarIntSize(gobj.hexJson.length)],
-      ["hexJSON", gobj.hexJson.length],
+      ["hexJSONLen", GObj.utils.toVarIntSize(gobj.dataHex.length)],
+      ["hexJSON", gobj.dataHex.length],
       ["masterNodeOutpointHash", 32],
       ["masterNodeOutpointIndex", 4],
       ["dummyByte", 1],
