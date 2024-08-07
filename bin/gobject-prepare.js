@@ -201,26 +201,33 @@ async function main() {
   }
 
   {
-    let proposalDeltaStr = toDaysStr(selected.startMs, selected.endMs);
-    let voteDeltaStr = toDaysStr(selected.startMs, selected.voteMs);
+    let proposalDeltaStr = toDaysStr(
+      selected.start.startMs,
+      selected.start.endMs,
+    );
+    let voteDeltaStr = toDaysStr(selected.start.startMs, selected.start.voteMs);
     let paymentDeltaStr = toDaysStr(
-      selected.superblockMs,
-      selected.superblockMs,
+      selected.start.superblockMs,
+      selected.end.superblockMs,
     );
     let totalDash = cycleCount * dashAmount;
 
     console.log("");
     console.log(
-      `Proposal Period: ${selected.startIso} - ${selected.endIso} (~${proposalDeltaStr} days)`,
+      `Proposal Period: ${selected.start.startIso} - ${selected.end.endIso} (~${proposalDeltaStr} days)`,
     );
     console.log(
-      `Vote Period:     ${selected.startIso} - ${selected.voteIso} (~${voteDeltaStr} days)`,
+      `Vote Period:     ${selected.start.startIso} - ${selected.end.voteIso} (~${voteDeltaStr} days)`,
     );
     console.log(
-      `Payment Period:  ${selected.superblockIso} - ${selected.superblockIso} (~${paymentDeltaStr} days)`,
+      `Payment Period:  ${selected.start.superblockIso} - ${selected.end.superblockIso} (~${paymentDeltaStr} days)`,
     );
     console.log("");
     console.log(`Total Dash: ${totalDash} = ${dashAmount} x ${cycleCount}`);
+  }
+
+  if (!proposalUrl) {
+    return;
   }
 
   /** @type {DashGov.GObjectData} */
@@ -335,13 +342,13 @@ async function main() {
     txid = await DashTx.getId(txInfoSigned.transaction);
     console.log(txid);
 
-     let txResult = await rpc.request("/", {
-       method: "sendrawtransaction",
-       params: [txInfoSigned.transaction],
-     });
-     console.log("");
-     console.log("Transaction sent:");
-     console.log(txResult);
+    let txResult = await rpc.request("/", {
+      method: "sendrawtransaction",
+      params: [txInfoSigned.transaction],
+    });
+    console.log("");
+    console.log("Transaction sent:");
+    console.log(txResult);
   }
 
   for (;;) {
