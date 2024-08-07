@@ -299,22 +299,9 @@ async function main() {
   let dashTx = DashTx.create(keyUtils);
 
   // dash-cli -testnet getaddressutxos '{"addresses":["yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC"]}'
-  // TODO see https://github.com/dashhive/DashKeys.js/issues/26
-  //let collateralAddr = DashKeys.wifToAddr(collateralWif, {
-  let collateralParts = await DashKeys.decode(collateralWif, {
-    version: "ef",
-    validate: true,
-  });
-  let collateralPrivBytes = DashKeys.utils.hexToBytes(
-    //@ts-ignore - bad types internally
-    collateralParts.privateKey,
-  );
-  let collateralPubBytes =
-    await DashKeys.utils.toPublicKey(collateralPrivBytes);
-  let collateralAddr = await DashKeys.pubkeyToAddr(collateralPubBytes, {
+  let collateralAddr = await DashKeys.wifToAddr(collateralWif, {
     version: "testnet",
   });
-  // end testnet workaround
 
   console.log("");
   console.log("Collateral Address (source of 1 DASH network fee):");
@@ -348,14 +335,13 @@ async function main() {
     txid = await DashTx.getId(txInfoSigned.transaction);
     console.log(txid);
 
-    //console.log(DashGov.PROPOSAL_FEE_RATE);
-    let txResult = await rpc.request("/", {
-      method: "sendrawtransaction",
-      params: [txInfoSigned.transaction],
-    });
-    console.log("");
-    console.log("Transaction sent:");
-    console.log(txResult);
+     let txResult = await rpc.request("/", {
+       method: "sendrawtransaction",
+       params: [txInfoSigned.transaction],
+     });
+     console.log("");
+     console.log("Transaction sent:");
+     console.log(txResult);
   }
 
   for (;;) {
