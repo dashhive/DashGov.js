@@ -53,11 +53,8 @@ async function main() {
   let gobjCollateralBytes = DashGov.serializeForCollateralTx(gobj);
   let gobjCollateralHex = DashGov.utils.bytesToHex(gobjCollateralBytes);
 
-  let crypto = globalThis.crypto;
-  let hash1 = await crypto.subtle.digest("SHA-256", gobjCollateralBytes);
-  let gobjCollateralHashBuf = await crypto.subtle.digest("SHA-256", hash1);
-  let gobjCollateralHashBytes = new Uint8Array(gobjCollateralHashBuf);
-  let gobjCollateralHashHex = DashGov.utils.bytesToHex(gobjCollateralHashBytes);
+  let gobjHashBytes = await DashGov.proposal.doubleSha256(gobjCollateralBytes);
+  let gobjId = DashGov.utils.bytesToHex(gobjHashBytes);
 
   console.log(
     "gobject prepare",
@@ -70,7 +67,7 @@ async function main() {
   console.log(`# ${gobjCollateralHex}`);
   console.log();
   console.log(`# GObject Hash ID (will be found in collateral tx memo)`);
-  console.log(`# ${gobjCollateralHashHex}`);
+  console.log(`# ${gobjId}`);
 }
 
 main()
