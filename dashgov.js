@@ -267,7 +267,6 @@ var DashGov = ("object" === typeof module && exports) || {};
   const END_EPOCH_MS_AFTER_SUPERBLOCK = 4 * 24 * 60 * 60 * 1000; // after superblock
   DashGov.PROPOSAL_LEAD_MS = PROPOSAL_LEAD_MS;
   DashGov.SUPERBLOCK_INTERVAL = SUPERBLOCK_INTERVAL;
-  DashGov.PROPOSAL_FEE_RATE = 100000000 / 1000; // 1 DASH per KB
 
   // not used because the actual average at any time is always closer to 157.5
   //const SECONDS_PER_BLOCK_ESTIMATE = 155;
