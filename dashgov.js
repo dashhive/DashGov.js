@@ -73,8 +73,7 @@ var DashGov = ("object" === typeof module && exports) || {};
   // Adapted from
   //   github.com/dashpay/dash/tree/develop/src/governance/common.cpp
 
-  // USAGE
-  //   node ./gobject-hash-debugger.js
+  let Crypto = globalThis.crypto;
 
   const LITTLE_ENDIAN = true;
   const VARINT_8_MAX = 252;
@@ -460,6 +459,17 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   /**
+   * @param {Uint8Array} gobjBytes - serialized gobj bytes
+   */
+  GObj.proposal.doubleSha256 = async function (gobjBytes) {
+    let hash1 = await Crypto.subtle.digest("SHA-256", gobjBytes);
+    let hash2 = await Crypto.subtle.digest("SHA-256", hash1);
+    let gobjHash = new Uint8Array(hash2);
+
+    return gobjHash;
+  };
+
+  /**
    * Note: since we're dealing with estimates that are typically reliable
    *       within an hour (and often even within 15 minutes), this may
    *       generate more results than it presents.
@@ -526,8 +536,8 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   /**
    * @param {Snapshot} snapshot
-   * @param {Float64} [secondsPerBlock]
-   * @param {Uint53} offset - how many superblocks in the future
+   * @param {Float64} secondsPerBlock
+   * @param {Uint53} [offset] - how many superblocks in the future
    * @returns {Estimate} - details about the current governance cycle
    */
   GObj.estimateNthNextGovCycle = function (
