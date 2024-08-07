@@ -67,7 +67,7 @@
 /** @type {Gov} */
 //@ts-ignore
 var DashGov = ("object" === typeof module && exports) || {};
-(function (window, GObj) {
+(function (window, DashGov) {
   "use strict";
 
   // Adapted from
@@ -82,18 +82,18 @@ var DashGov = ("object" === typeof module && exports) || {};
 
   let textEncoder = new TextEncoder();
 
-  GObj._type = 0b0000010; // from SER_GETHASH (bitwise enum)
-  GObj._typeBytes = Uint8Array.from([0b0000010]);
-  GObj._protocalVersion = 70231; // 0x00011257 (BE) => 0x57120100 (LE)
-  GObj._protocalVersionBytes = Uint8Array.from([0x57, 0x12, 0x01, 0x00]);
+  DashGov._type = 0b0000010; // from SER_GETHASH (bitwise enum)
+  DashGov._typeBytes = Uint8Array.from([0b0000010]);
+  DashGov._protocalVersion = 70231; // 0x00011257 (BE) => 0x57120100 (LE)
+  DashGov._protocalVersionBytes = Uint8Array.from([0x57, 0x12, 0x01, 0x00]);
 
-  GObj.utils = {};
+  DashGov.utils = {};
 
   /**
    * @param {Uint8Array} bytes
    * @returns {String} hex
    */
-  GObj.utils.bytesToHex = function bytesToHex(bytes) {
+  DashGov.utils.bytesToHex = function bytesToHex(bytes) {
     let hexes = [];
     for (let i = 0; i < bytes.length; i += 1) {
       let b = bytes[i];
@@ -106,6 +106,37 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   /**
+   * @param {Number} ms
+   */
+  DashGov.utils.sleep = async function (ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  };
+
+  /**
+   * @param {Uint8Array} bytes - i.e. serialized gobj bytes
+   */
+  DashGov.utils.doubleSha256 = async function (bytes) {
+    let hash1 = await Crypto.subtle.digest("SHA-256", bytes);
+    let hash2 = await Crypto.subtle.digest("SHA-256", hash1);
+    let gobjHash = new Uint8Array(hash2);
+
+    return gobjHash;
+  };
+
+  /**
+   * @param {Uint8Array} hashBytes
+   */
+  DashGov.utils.hashToId = function (hashBytes) {
+    let reverseBytes = hashBytes.slice();
+    reverseBytes.reverse();
+
+    let id = DashGov.utils.bytesToHex(reverseBytes);
+    return id;
+  };
+
+  /**
    * Gets the number of bytes to store the number with VarInt "compression"
    *   - 1 byte for 0-252 (Uint8)
    *   - 1+2 bytes for 253 + Uint16
@@ -114,7 +145,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Number} n
    * @returns {1|3|5|9}
    */
-  GObj.utils.toVarIntSize = function (n) {
+  DashGov.utils.toVarIntSize = function (n) {
     if (n <= VARINT_8_MAX) {
       return 1;
     }
@@ -161,13 +192,13 @@ var DashGov = ("object" === typeof module && exports) || {};
   /**
    * @param {GObject} gobj
    */
-  GObj.serializeForCollateralTx = function ({
+  DashGov.serializeForCollateralTx = function ({
     hashParent = 0,
     revision = 1,
     time,
     dataHex,
   }) {
-    const varIntSize = GObj.utils.toVarIntSize(dataHex.length);
+    const varIntSize = DashGov.utils.toVarIntSize(dataHex.length);
 
     const dataLen =
       32 + // hashParent
@@ -236,6 +267,7 @@ var DashGov = ("object" === typeof module && exports) || {};
   const END_EPOCH_MS_AFTER_SUPERBLOCK = 4 * 24 * 60 * 60 * 1000; // after superblock
   DashGov.PROPOSAL_LEAD_MS = PROPOSAL_LEAD_MS;
   DashGov.SUPERBLOCK_INTERVAL = SUPERBLOCK_INTERVAL;
+  DashGov.PROPOSAL_FEE_RATE = 100000000 / 1000; // 1 DASH per KB
 
   // not used because the actual average at any time is always closer to 157.5
   //const SECONDS_PER_BLOCK_ESTIMATE = 155;
@@ -252,7 +284,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Snapshot} root
    * @returns {Float64} - fractional seconds
    */
-  GObj.measureSecondsPerBlock = function (snapshot, root) {
+  DashGov.measureSecondsPerBlock = function (snapshot, root) {
     let blockDelta = snapshot.block - root.block;
     let timeDelta = snapshot.ms - root.ms;
     let msPerBlock = timeDelta / blockDelta;
@@ -265,7 +297,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Snapshot} [snapshot] - defaults to mainnet monthly superblock 61
    * @returns {Float64} - fractional seconds
    */
-  GObj.estimateSecondsPerBlock = function (snapshot) {
+  DashGov.estimateSecondsPerBlock = function (snapshot) {
     if (!snapshot) {
       snapshot = {
         block: MONTHLY_SUPERBLOCK_61,
@@ -277,7 +309,7 @@ var DashGov = ("object" === typeof module && exports) || {};
       ms: Date.parse(MONTHLY_SUPERBLOCK_01_DATE),
     };
 
-    let spb = GObj.measureSecondsPerBlock(snapshot, root);
+    let spb = DashGov.measureSecondsPerBlock(snapshot, root);
     return spb;
   };
 
@@ -285,7 +317,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Uint53} ms - the current time
    * @param {Float64} secondsPerBlock
    */
-  GObj.estimateBlockHeight = function (ms, secondsPerBlock) {
+  DashGov.estimateBlockHeight = function (ms, secondsPerBlock) {
     let then = Date.parse(MONTHLY_SUPERBLOCK_61_DATE);
     let delta = ms - then;
     let deltaS = delta / 1000;
@@ -301,7 +333,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Uint32} startPeriod
    * @param {Uint32} endPeriod
    */
-  GObj.selectEstimates = function (estimates, startPeriod, endPeriod) {
+  DashGov.selectEstimates = function (estimates, startPeriod, endPeriod) {
     let startEstimate;
     let endEstimate;
 
@@ -332,7 +364,7 @@ var DashGov = ("object" === typeof module && exports) || {};
     return { start: startEstimate, end: endEstimate };
   };
 
-  GObj.proposal = {};
+  DashGov.proposal = {};
 
   /**
    * @param {Object} selected
@@ -340,7 +372,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Estimate} selected.end
    * @param {DashGov.GObjectData} proposalData
    */
-  GObj.proposal.draftJson = function (selected, proposalData) {
+  DashGov.proposal.draftJson = function (selected, proposalData) {
     let startEpoch = selected.start.startMs / 1000;
     startEpoch = Math.round(startEpoch);
 
@@ -368,9 +400,9 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {GObjectData} data - will be sorted and hex-ified
    * @param {GObject} [gobj] - override values
    */
-  GObj.proposal.draft = function (now, startEpochMs, data, gobj) {
-    let dataHex = gobj?.dataHex || GObj.proposal.sortAndEncodeJson(data);
-    let time = GObj.proposal._selectKnownTime(now, startEpochMs);
+  DashGov.proposal.draft = function (now, startEpochMs, data, gobj) {
+    let dataHex = gobj?.dataHex || DashGov.proposal.sortAndEncodeJson(data);
+    let time = DashGov.proposal._selectKnownTime(now, startEpochMs);
 
     /** @type {DashGov.GObject} */
     let normalGObj = {
@@ -391,7 +423,7 @@ var DashGov = ("object" === typeof module && exports) || {};
   /**
    * @param {DashGov.GObjectData} normalizedData
    */
-  GObj.proposal.sortAndEncodeJson = function (normalizedData) {
+  DashGov.proposal.sortAndEncodeJson = function (normalizedData) {
     let keys = Object.keys(normalizedData);
     keys.sort();
 
@@ -418,7 +450,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Uint53} now
    * @param {Uint53} startMs
    */
-  GObj.proposal._selectKnownTime = function (now, startMs) {
+  DashGov.proposal._selectKnownTime = function (now, startMs) {
     let startEpochDate = new Date(startMs);
     let today = new Date();
     if (today < startEpochDate) {
@@ -441,7 +473,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * we just get rid of it.
    * @param {Uint53} ms
    */
-  GObj.proposal._roundDownToHour = function (ms) {
+  DashGov.proposal._roundDownToHour = function (ms) {
     let timeF = ms / msToHours;
     let time = Math.floor(timeF);
     ms = time * msToHours;
@@ -451,22 +483,11 @@ var DashGov = ("object" === typeof module && exports) || {};
   /**
    * @param {Uint53} ms
    */
-  GObj.proposal._roundUpToHour = function (ms) {
+  DashGov.proposal._roundUpToHour = function (ms) {
     let timeF = ms / msToHours;
     let time = Math.ceil(timeF);
     ms = time * msToHours;
     return ms;
-  };
-
-  /**
-   * @param {Uint8Array} gobjBytes - serialized gobj bytes
-   */
-  GObj.proposal.doubleSha256 = async function (gobjBytes) {
-    let hash1 = await Crypto.subtle.digest("SHA-256", gobjBytes);
-    let hash2 = await Crypto.subtle.digest("SHA-256", hash1);
-    let gobjHash = new Uint8Array(hash2);
-
-    return gobjHash;
   };
 
   /**
@@ -479,7 +500,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Float64} [secondsPerBlock] - typically close to 157.6
    * @returns {Estimates} - the last, due, and upcoming proposal cycles
    */
-  GObj.estimateProposalCycles = function (
+  DashGov.estimateProposalCycles = function (
     cycles = 3,
     snapshot = null,
     secondsPerBlock = 0,
@@ -491,16 +512,16 @@ var DashGov = ("object" === typeof module && exports) || {};
       if (currentBlock) {
         snapshot = { block: currentBlock, ms: now };
       }
-      secondsPerBlock = GObj.estimateSecondsPerBlock(snapshot);
+      secondsPerBlock = DashGov.estimateSecondsPerBlock(snapshot);
     }
     if (!currentBlock) {
-      currentBlock = GObj.estimateBlockHeight(now, secondsPerBlock);
+      currentBlock = DashGov.estimateBlockHeight(now, secondsPerBlock);
     }
 
     /** @type {Array<Estimate>} */
     let estimates = [];
     for (let i = 0; i <= cycles + 1; i += 1) {
-      let estimate = GObj.estimateNthNextGovCycle(
+      let estimate = DashGov.estimateNthNextGovCycle(
         { block: currentBlock, ms: now },
         secondsPerBlock,
         i,
@@ -540,16 +561,16 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Uint53} [offset] - how many superblocks in the future
    * @returns {Estimate} - details about the current governance cycle
    */
-  GObj.estimateNthNextGovCycle = function (
+  DashGov.estimateNthNextGovCycle = function (
     snapshot,
     secondsPerBlock,
     offset = 0,
   ) {
     if (!secondsPerBlock) {
-      secondsPerBlock = GObj.estimateSecondsPerBlock(snapshot);
+      secondsPerBlock = DashGov.estimateSecondsPerBlock(snapshot);
     }
 
-    let superblockHeight = GObj.getNthNextSuperblock(snapshot.block, offset);
+    let superblockHeight = DashGov.getNthNextSuperblock(snapshot.block, offset);
 
     let superblockDelta = superblockHeight - snapshot.block;
     let superblockDeltaMs = superblockDelta * secondsPerBlock * 1000;
@@ -567,11 +588,11 @@ var DashGov = ("object" === typeof module && exports) || {};
     let vtts = d.toISOString();
 
     let startMs = vtms - START_EPOCH_MS_BEFORE_VOTE;
-    startMs = GObj.proposal._roundDownToHour(startMs);
+    startMs = DashGov.proposal._roundDownToHour(startMs);
     let startTime = new Date(startMs);
 
     let endMs = sbms + END_EPOCH_MS_AFTER_SUPERBLOCK;
-    endMs = GObj.proposal._roundUpToHour(endMs);
+    endMs = DashGov.proposal._roundUpToHour(endMs);
     let endTime = new Date(endMs);
 
     return {
@@ -598,7 +619,7 @@ var DashGov = ("object" === typeof module && exports) || {};
    * @param {Uint53} offset - 0 (current / previous), 1 (next), 2, 3, nth
    * @returns {Uint53} - the superblock after the given height
    */
-  GObj.getNthNextSuperblock = function (height, offset) {
+  DashGov.getNthNextSuperblock = function (height, offset) {
     let superblockCount = height / SUPERBLOCK_INTERVAL;
     superblockCount = Math.floor(superblockCount);
 
@@ -609,7 +630,7 @@ var DashGov = ("object" === typeof module && exports) || {};
   };
 
   //@ts-ignore
-  window.DashGov = GObj;
+  window.DashGov = DashGov;
 })(globalThis.window || {}, DashGov);
 if ("object" === typeof module) {
   module.exports = DashGov;
