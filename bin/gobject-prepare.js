@@ -20,14 +20,21 @@ async function main() {
   console.info("");
   console.info("USAGE");
   console.info(
-    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./collateral-key.wif>",
+    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./collateral-key.wif> [network]",
   );
   console.info("");
   console.info("EXAMPLE");
   console.info(
-    "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif",
+    "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif testnet",
   );
   console.info("");
+
+  /** @type {"mainnet"|"testnet"} */
+  let network = "mainnet";
+  let isTestnet = takeFlag(process.argv, ["--testnet"]);
+  if (isTestnet) {
+    network = "testnet";
+  }
 
   let startPeriod = parseInt(process.argv[2] || "1", 10);
   let numPeriods = parseInt(process.argv[3] || "1", 10);
@@ -269,7 +276,7 @@ async function main() {
      * @param {Number} i
      */
     getPrivateKey: async function (txInput, i) {
-      return DashKeys.wifToPrivKey(collateralWif, { version: "testnet" });
+      return DashKeys.wifToPrivKey(collateralWif, { version: network });
     },
 
     /**
@@ -308,7 +315,7 @@ async function main() {
 
   // dash-cli -testnet getaddressutxos '{"addresses":["yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC"]}'
   let collateralAddr = await DashKeys.wifToAddr(collateralWif, {
-    version: "testnet",
+    version: network,
   });
 
   console.log("");
@@ -318,7 +325,7 @@ async function main() {
   // we can set txid to short circuit for testing
   let txid = "";
   // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
-  // txid = "";
+  // txid = "10d9862feb6eac6cf6fa653589e39b60a0ed640bae4140c51c35401ffe019479";
   if (!txid) {
     let utxosResult = await rpc.getaddressutxos({
       addresses: [collateralAddr],
@@ -407,31 +414,32 @@ async function main() {
   // }
 
   async function submit() {
-    let gobjResult = await rpc
-      .request("/", {
-        method: "gobject",
-        params: [
-          "submit",
-          gobj.hashParent.toString(), // '0' must be a string for some reason
-          gobj.revision.toString(),
-          gobj.time.toString(),
-          gobj.dataHex,
-          txid,
-        ],
-      })
-      .catch(
-        /** @param {Error} err */ function (err) {
-          const E_INVALID_COLLATERAL = -32603;
-          // @ts-ignore - code exists
-          let code = err.code;
-          if (code === E_INVALID_COLLATERAL) {
-            // wait for collateral to become valid
-            console.error(code, err.message);
-            return null;
-          }
-          throw err;
-        },
-      );
+    let req = {
+      method: "gobject",
+      params: [
+        "submit",
+        gobj.hashParent.toString(), // '0' must be a string for some reason
+        gobj.revision.toString(),
+        gobj.time.toString(),
+        gobj.dataHex,
+        txid,
+      ],
+    };
+    let args = req.params.join(" ");
+    console.log(`${req.method} ${args}`);
+    let gobjResult = await rpc.request("/", req).catch(
+      /** @param {Error} err */ function (err) {
+        const E_INVALID_COLLATERAL = -32603;
+        // @ts-ignore - code exists
+        let code = err.code;
+        if (code === E_INVALID_COLLATERAL) {
+          // wait for collateral to become valid
+          console.error(code, err.message);
+          return null;
+        }
+        throw err;
+      },
+    );
 
     return gobjResult;
   }
@@ -448,6 +456,28 @@ async function main() {
     console.log(`Waiting for GObject ${gobjId}...`);
     await DashGov.utils.sleep(5000);
   }
+}
+
+/**
+ * Find, remove, and return the first matching flag from the arguments list
+ * @param {Array<String>} argv
+ * @param {Array<String>} flags
+ */
+function takeFlag(argv, flags) {
+  let flagValue = null;
+
+  for (let flag of flags) {
+    let index = argv.indexOf(flag);
+    if (index === -1) {
+      continue;
+    }
+
+    flagValue = argv[index];
+    void argv.splice(index, 1);
+    break;
+  }
+
+  return flagValue;
 }
 
 main()
