@@ -95,7 +95,8 @@ async function main() {
 
   let totalCycleCount = numPeriods - 1;
   let endPeriod = startPeriod + totalCycleCount;
-  let cycleCount = Math.max(3, endPeriod);
+  let cycleCount = endPeriod;
+  let displayCycleCount = Math.max(3, endPeriod);
   let snapshot = {
     ms: blockMs,
     block: blockHeight,
@@ -107,7 +108,7 @@ async function main() {
     secondsPerBlock,
   );
   let estimates = DashGov.estimateProposalCycles(
-    cycleCount,
+    displayCycleCount,
     snapshot,
     secondsPerBlock,
   );
