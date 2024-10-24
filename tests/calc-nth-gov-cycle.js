@@ -1,8 +1,8 @@
 "use strict";
 
-let Assert = require("assert/strict");
+import Assert from "node:assert/strict";
 
-let DashGov = require("../");
+import DashGov from "dashgov";
 
 let currentBlockHeight = 2114623;
 let currentBlockMs = Date.parse("2024-08-01T22:01:00Z");

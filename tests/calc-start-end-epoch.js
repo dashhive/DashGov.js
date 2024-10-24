@@ -1,7 +1,7 @@
 "use strict";
 
-let DashGov = require("../");
-//let Logger = require("../scripts/estimate.js");
+import DashGov from "dashgov";
+//import Logger from "dashgov/scripts/estimate.js";
 
 function check2024Aug1() {
   let currentBlockHeight = 2114623;

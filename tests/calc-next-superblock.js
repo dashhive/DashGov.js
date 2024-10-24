@@ -1,6 +1,6 @@
 "use strict";
 
-let DashGov = require("../");
+import DashGov from "dashgov";
 
 let sb = 2126848;
 let tests = [

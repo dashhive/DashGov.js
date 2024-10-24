@@ -1,6 +1,6 @@
 "use strict";
 
-let DashGov = require("../");
+import DashGov from "dashgov";
 
 let secondsPerBlock = DashGov.estimateSecondsPerBlock();
 if (secondsPerBlock !== DashGov._AVG_SECS_PER_BLOCK) {

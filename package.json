@@ -3,6 +3,17 @@
   "version": "0.1.0",
   "description": "Utility functions for Dash governance on the blockchain.",
   "main": "dashgov.js",
+  "type": "module",
+  "files": [
+    "./dashgov.js"
+  ],
+  "exports": {
+    ".": "./dashgov.js",
+    "./*": "./*"
+  },
+  "imports": {
+    "dashgov": "./dashgov.js"
+  },
   "scripts": {
     "bump": "npm version -m \"chore(release): bump to v%s\"",
     "fmt": "npm run prettier",

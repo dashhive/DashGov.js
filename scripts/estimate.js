@@ -6,9 +6,9 @@
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-let DashGov = require("../");
+import DashGov from "dashgov";
 
-let Logger = module.exports;
+let Logger = {};
 
 Logger.logEstimate = function (estimate, index) {
   console.info(`Until next (${index})...`);
@@ -116,6 +116,8 @@ function main() {
 
 Logger.main = main;
 
-if (require.main === module) {
+if (import.meta.main) {
   main();
 }
+
+export default Logger;
