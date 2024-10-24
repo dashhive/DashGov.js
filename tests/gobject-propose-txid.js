@@ -2,6 +2,8 @@
 
 import GObj from "dashgov";
 
+let Crypto = globalThis.crypto;
+
 // function hexToBytes(hex) {
 //   let len = hex.length / 2;
 //   let bytes = new Uint8Array(len);
@@ -63,8 +65,8 @@ async function main() {
 
   let hashBytes;
   {
-    let hash1 = await crypto.subtle.digest("SHA-256", gobjBurnBytes);
-    let hash2 = await crypto.subtle.digest("SHA-256", hash1);
+    let hash1 = await Crypto.subtle.digest("SHA-256", gobjBurnBytes);
+    let hash2 = await Crypto.subtle.digest("SHA-256", hash1);
 
     let hash1Bytes = new Uint8Array(hash1);
     let hash1Hex = GObj.utils.bytesToHex(hash1Bytes);
@@ -83,20 +85,20 @@ async function main() {
   return hashBytes;
 }
 
-function logLine64(str, comment, value) {
-  for (let i = 0; i < str.length; i += 64) {
-    let line = str.substring(i, i + 64);
-    if (i === 0) {
-      if (typeof value !== "undefined") {
-        line = `${line} (${value})`;
-      }
-      line = line.padEnd(64, " ");
-      console.info(line, comment);
-    } else {
-      console.info(line);
-    }
-  }
-}
+// function logLine64(str, comment, value) {
+//   for (let i = 0; i < str.length; i += 64) {
+//     let line = str.substring(i, i + 64);
+//     if (i === 0) {
+//       if (typeof value !== "undefined") {
+//         line = `${line} (${value})`;
+//       }
+//       line = line.padEnd(64, " ");
+//       console.info(line, comment);
+//     } else {
+//       console.info(line);
+//     }
+//   }
+// }
 
 main()
   .then(function () {

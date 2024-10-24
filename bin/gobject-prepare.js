@@ -4,7 +4,7 @@
 import DashGov from "dashgov";
 import DashKeys from "dashkeys";
 import DashTx from "dashtx";
-import Secp256k1 from "@dashincubator/secp256k1";
+import * as Secp256k1 from "@dashincubator/secp256k1";
 
 import Fs from "node:fs/promises";
 
@@ -216,7 +216,6 @@ async function main() {
     return;
   }
 
-  /** @type {import('../dashgov.js').GObjectData} */
   let gobjData = DashGov.proposal.draftJson(selected, {
     name: proposalName,
     payment_address: paymentAddr,
@@ -251,7 +250,7 @@ async function main() {
   let keyUtils = {
     /**
      * @param {DashTx.TxInputForSig} txInput
-     * @param {Number} i
+     * @param {Number} [i]
      */
     getPrivateKey: async function (txInput, i) {
       return DashKeys.wifToPrivKey(burnWif, { version: network });
@@ -259,7 +258,7 @@ async function main() {
 
     /**
      * @param {DashTx.TxInputForSig} txInput
-     * @param {Number} i
+     * @param {Number} [i]
      */
     getPublicKey: async function (txInput, i) {
       let privKeyBytes = await keyUtils.getPrivateKey(txInput, i);

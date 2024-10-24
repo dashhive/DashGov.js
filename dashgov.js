@@ -22,12 +22,12 @@
 
 /**
  * @typedef GObjectData
- * @prop {Uint53} end_epoch - whole seconds since epoch (like web-standard `exp`)
+ * @prop {Uint53} [end_epoch] - whole seconds since epoch (like web-standard `exp`)
  * @prop {String} name - kebab case (no spaces)
  * @prop {String} payment_address - base58-encoded p2pkh
  * @prop {Uint32} payment_amount - in whole DASH
- * @prop {Uint53} start_epoch - whole seconds since epoch (like web-standard `iat`)
- * @prop {Uint32} type - TODO
+ * @prop {Uint53} [start_epoch] - whole seconds since epoch (like web-standard `iat`)
+ * @prop {Uint32} [type] - TODO
  * @prop {String} url - conventionally dashcentral, with page the same as the 'name'
  */
 
@@ -363,6 +363,7 @@ DashGov.proposal = {};
  * @param {Estimate} selected.start
  * @param {Estimate} selected.end
  * @param {GObjectData} proposalData
+ * @returns {Required<GObjectData>}
  */
 DashGov.proposal.draftJson = function (selected, proposalData) {
   let startEpoch = selected.start.startMs / 1000;
@@ -389,8 +390,8 @@ DashGov.proposal.draftJson = function (selected, proposalData) {
  * Creates a draft object with reasonable and default values
  * @param {Uint53} now - use Date.now(), except in testing
  * @param {Uint53} startEpochMs - used to create a deterministic gobject time
- * @param {GObjectData} data - will be sorted and hex-ified
- * @param {GObject} [gobj] - override values
+ * @param {Required<GObjectData>} data - will be sorted and hex-ified
+ * @param {Partial<GObject>} [gobj] - override values
  */
 DashGov.proposal.draft = function (now, startEpochMs, data, gobj) {
   let dataHex = gobj?.dataHex || DashGov.proposal.sortAndEncodeJson(data);
@@ -413,7 +414,7 @@ DashGov.proposal.draft = function (now, startEpochMs, data, gobj) {
 };
 
 /**
- * @param {GObjectData} normalizedData
+ * @param {Required<GObjectData>} normalizedData
  */
 DashGov.proposal.sortAndEncodeJson = function (normalizedData) {
   let keys = Object.keys(normalizedData);
