@@ -1,18 +1,12 @@
 #!/usr/bin/env node
 "use strict";
 
-import DotEnv from "dotenv";
-
 import DashGov from "dashgov";
-import DashRpc from "dashrpc";
 import DashKeys from "dashkeys";
 import DashTx from "dashtx";
 import Secp256k1 from "@dashincubator/secp256k1";
 
 import Fs from "node:fs/promises";
-
-DotEnv.config({ path: ".env" });
-DotEnv.config({ path: ".env.secret" });
 
 async function main() {
   /* jshint maxcomplexity: 100 */
@@ -32,8 +26,14 @@ async function main() {
 
   /** @type {"mainnet"|"testnet"} */
   let network = "mainnet";
+  let rpcBasicAuth = `api:null`;
+  let rpcBaseUrl = `https://${rpcBasicAuth}@rpc.digitalcash.dev/`;
+  let rpcExplorer = "https://rpc.digitalcash.dev/";
+
   let isTestnet = takeFlag(process.argv, ["--testnet"]);
   if (isTestnet) {
+    rpcBaseUrl = `https://${rpcBasicAuth}@trpc.digitalcash.dev/`;
+    rpcExplorer = "https://trpc.digitalcash.dev/";
     network = "testnet";
   }
 
@@ -50,54 +50,31 @@ async function main() {
     burnWif = burnWif.trim();
   }
 
-  let rpcConfig = {
-    protocol: process.env.DASHD_RPC_PROTOCOL || "",
-    user: process.env.DASHD_RPC_USER || process.env.DASHD_RPC_USERNAME || "",
-    pass: process.env.DASHD_RPC_PASS || process.env.DASHD_RPC_PASSWORD || "",
-    host: process.env.DASHD_RPC_HOST || process.env.DASHD_RPC_HOSTNAME || "",
-    port: parseInt(process.env.DASHD_RPC_PORT || "", 10),
-    onconnected: function () {
-      console.info(
-        `[dashrpc] connected to '${rpcConfig.host}:${rpcConfig.port}'`,
-      );
-    },
-  };
-
-  if (!rpcConfig.protocol) {
-    throw new Error(`not set: export DASHD_RPC_PROTOCOL=`);
-  }
-  if (!rpcConfig.user) {
-    throw new Error(`not set: export DASHD_RPC_USERNAME=`);
-  }
-  if (!rpcConfig.pass) {
-    throw new Error(`not set: export DASHD_RPC_PASSWORD=`);
-  }
-  if (!rpcConfig.host) {
-    throw new Error(`not set: export DASHD_RPC_HOSTNAME=`);
-  }
-  if (!rpcConfig.port) {
-    throw new Error(`not set: export DASHD_RPC_PORT=`);
+  /**
+   * @param {String} method
+   * @param {...any} params
+   */
+  async function rpc(method, ...params) {
+    let result = await DashTx.utils.rpc(rpcBaseUrl, method, ...params);
+    return result;
   }
 
-  let rpc = DashRpc.create(rpcConfig);
-  void (await rpc.init());
-
-  let tipsResult = await rpc.getBestBlockHash();
-  let blockInfoResult = await rpc.getBlock(tipsResult.result, 1);
-  let blockHeight = blockInfoResult.result.height;
-  let blockMs = blockInfoResult.result.time * 1000;
-  // console.log(rootInfoResult.result, blockInfoResult.result, blockMs);
+  let tipsResult = await rpc("getbestblockhash");
+  let blockInfoResult = await rpc("getblock", tipsResult, 1);
+  let blockHeight = blockInfoResult.height;
+  let blockMs = blockInfoResult.time * 1000;
+  // console.log(rootInfoResult, blockInfoResult, blockMs);
   // let blockTime = new Date(blockMs);
 
   // for testnet
   let blockDelta = 25000;
-  let rootHeight = blockInfoResult.result.height - blockDelta;
-  let rootResult = await rpc.getBlockHash(rootHeight);
-  let rootInfoResult = await rpc.getBlock(rootResult.result, 1);
+  let rootHeight = blockInfoResult.height - blockDelta;
+  let rootResult = await rpc("getblockhash", rootHeight);
+  let rootInfoResult = await rpc("getblock", rootResult, 1);
 
   let root = {
     block: rootHeight,
-    ms: rootInfoResult.result.time * 1000,
+    ms: rootInfoResult.time * 1000,
   };
   // let rootTime = new Date(root.ms);
 
@@ -327,12 +304,12 @@ async function main() {
   let txid = "";
   let txInfoSigned;
   {
-    let utxosResult = await rpc.getaddressutxos({
+    let utxosResult = await rpc("getaddressutxos", {
       addresses: [burnAddr],
     });
     // TODO make sure there's just 1
     // @type {Array<DashTx.TxInput>} */
-    let inputs = [utxosResult.result[0]];
+    let inputs = [utxosResult[0]];
     // TODO the hash bytes may be reversed
     // @type {Array<DashTx.TxOutput>} */
     let outputs = [{ memo: gobjIdForward, satoshis: 100000000 }];
@@ -352,24 +329,19 @@ async function main() {
   }
 
   async function check() {
-    let gobjResult = await rpc
-      .request("/", {
-        method: "gobject",
-        params: ["check", gobj.dataHex],
-      })
-      .catch(
-        /** @param {any} err */ function (err) {
-          console.error(err.message);
-          console.error(err.code);
-          console.error(err);
-          // invalid burn hash
-          return null;
-        },
-      );
+    let gobjResult = await rpc("gobject", "check", gobj.dataHex).catch(
+      /** @param {any} err */ function (err) {
+        console.error(err.message);
+        console.error(err.code);
+        console.error(err);
+        // invalid burn hash
+        return null;
+      },
+    );
 
     // { result: { 'Object status': 'OK' }, error: null, id: 5542 }
-    if (gobjResult?.result?.["Object status"] !== "OK") {
-      throw new Error(`gobject failed: ${gobjResult.result.error}`);
+    if (gobjResult?.["Object status"] !== "OK") {
+      throw new Error(`gobject failed: ${gobjResult.error}`);
     }
     return gobjResult;
   }
@@ -379,40 +351,29 @@ async function main() {
   // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
   // set to false to short circuit for testing
   if (true) {
-    let txResult = await rpc.request("/", {
-      method: "sendrawtransaction",
-      params: [txInfoSigned.transaction],
-    });
+    let txResult = await rpc("sendrawtransaction", txInfoSigned.transaction);
     console.log("");
     console.log("Transaction sent:");
     console.log(txResult);
   }
 
   for (;;) {
-    let txResult = await rpc
-      .request("/", {
-        method: "gettxoutproof",
-        params: [[txid]],
-      })
-      .catch(
-        /** @param {Error} err */ function (err) {
-          const E_NOT_IN_BLOCK = -5;
-          // @ts-ignore - code exists
-          let code = err.code;
-          if (code === E_NOT_IN_BLOCK) {
-            return null;
-          }
-          throw err;
-        },
-      );
+    let txResult = await rpc("gettxoutproof", [txid]).catch(
+      /** @param {Error} err */ function (err) {
+        const E_NOT_IN_BLOCK = -5;
+        // @ts-ignore - code exists
+        let code = err.code;
+        if (code === E_NOT_IN_BLOCK) {
+          return null;
+        }
+        throw err;
+      },
+    );
     if (txResult) {
       console.log("");
       console.log(`TxOutProof`);
       console.log(txResult);
-      let jsonResult = await rpc.request("/", {
-        method: "getrawtransaction",
-        params: [txid, 1],
-      });
+      let jsonResult = await rpc("getrawtransaction", txid, 1);
       console.log("");
       console.log(`Tx`);
       console.log(jsonResult);
@@ -437,7 +398,7 @@ async function main() {
     };
     let args = req.params.join(" ");
     console.log(`${req.method} ${args}`);
-    let gobjResult = await rpc.request("/", req).catch(
+    let gobjResult = await rpc("gobject", ...req.params).catch(
       /** @param {Error} err */ function (err) {
         const E_INVALID_COLLATERAL = -32603;
         // @ts-ignore - code exists
