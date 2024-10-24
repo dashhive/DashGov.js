@@ -21,7 +21,7 @@ async function main() {
   console.info("");
   console.info("USAGE");
   console.info(
-    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./collateral-key.wif> [network]",
+    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./burn-key.wif> [network]",
   );
   console.info("");
   console.info("EXAMPLE");
@@ -43,11 +43,11 @@ async function main() {
   let proposalUrl = process.argv[5] || "";
   let proposalName = process.argv[6] || "";
   let paymentAddr = process.argv[7] || "";
-  let collateralWifPath = process.argv[8] || "";
-  let collateralWif = "";
-  if (collateralWifPath) {
-    collateralWif = await Fs.readFile(collateralWifPath, "utf8");
-    collateralWif = collateralWif.trim();
+  let burnWifPath = process.argv[8] || "";
+  let burnWif = "";
+  if (burnWifPath) {
+    burnWif = await Fs.readFile(burnWifPath, "utf8");
+    burnWif = burnWif.trim();
   }
 
   let rpcConfig = {
@@ -251,10 +251,10 @@ async function main() {
   let gobj = DashGov.proposal.draft(now, selected.start.startMs, gobjData, {});
   console.log(gobj);
 
-  let gobjCollateralBytes = DashGov.serializeForCollateralTx(gobj);
-  let gobjCollateralHex = DashGov.utils.bytesToHex(gobjCollateralBytes);
+  let gobjBurnBytes = DashGov.serializeForBurnTx(gobj);
+  let gobjBurnHex = DashGov.utils.bytesToHex(gobjBurnBytes);
 
-  let gobjHashBytes = await DashGov.utils.doubleSha256(gobjCollateralBytes);
+  let gobjHashBytes = await DashGov.utils.doubleSha256(gobjBurnBytes);
   let gobjId = DashGov.utils.hashToId(gobjHashBytes);
 
   let gobjHashBytesReverse = gobjHashBytes.slice();
@@ -262,11 +262,11 @@ async function main() {
   let gobjIdForward = DashGov.utils.hashToId(gobjHashBytesReverse);
 
   console.log("");
-  console.log("GObject Serialization (for hash for collateral memo)");
-  console.log(gobjCollateralHex);
+  console.log("GObject Serialization (for hash for burn memo)");
+  console.log(gobjBurnHex);
 
   console.log("");
-  console.log("(Collateralized) GObject ID (for op return memo)");
+  console.log("(Burnable) GObject ID (for op return memo)");
   console.log(gobjIdForward);
   console.log("GObject ID (for 'gobject get <gobj-id>')");
   console.log(gobjId);
@@ -277,7 +277,7 @@ async function main() {
      * @param {Number} i
      */
     getPrivateKey: async function (txInput, i) {
-      return DashKeys.wifToPrivKey(collateralWif, { version: network });
+      return DashKeys.wifToPrivKey(burnWif, { version: network });
     },
 
     /**
@@ -316,19 +316,19 @@ async function main() {
   let dashTx = DashTx.create(keyUtils);
 
   // dash-cli -testnet getaddressutxos '{"addresses":["yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC"]}'
-  let collateralAddr = await DashKeys.wifToAddr(collateralWif, {
+  let burnAddr = await DashKeys.wifToAddr(burnWif, {
     version: network,
   });
 
   console.log("");
-  console.log("Collateral Address (source of 1 DASH network fee):");
-  console.log(collateralAddr);
+  console.log("Burn Address (source of 1 DASH network fee):");
+  console.log(burnAddr);
 
   let txid = "";
   let txInfoSigned;
   {
     let utxosResult = await rpc.getaddressutxos({
-      addresses: [collateralAddr],
+      addresses: [burnAddr],
     });
     // TODO make sure there's just 1
     // @type {Array<DashTx.TxInput>} */
@@ -342,11 +342,11 @@ async function main() {
     //
 
     console.log("");
-    console.log("Signed Collateral Transaction (ready for broadcast):");
+    console.log("Signed Burn Transaction (ready for broadcast):");
     console.log(txInfoSigned.transaction);
 
     console.log("");
-    console.log("Signed Collateral Transaction ID:");
+    console.log("Signed Burn Transaction ID:");
     txid = await DashTx.getId(txInfoSigned.transaction);
     console.log(txid);
   }
@@ -443,7 +443,7 @@ async function main() {
         // @ts-ignore - code exists
         let code = err.code;
         if (code === E_INVALID_COLLATERAL) {
-          // wait for collateral to become valid
+          // wait for burn to become valid
           console.error(code, err.message);
           return null;
         }
