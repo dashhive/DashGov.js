@@ -296,7 +296,8 @@ async function main() {
      * @param {Uint8Array} txHashBytes
      */
     sign: async function (privKeyBytes, txHashBytes) {
-      let sigOpts = { canonical: true, extraEntropy: true };
+      // extraEntropy set to null to make gobject transactions idempotent
+      let sigOpts = { canonical: true, extraEntropy: null };
       let sigBytes = await Secp256k1.sign(txHashBytes, privKeyBytes, sigOpts);
 
       return sigBytes;
@@ -323,11 +324,9 @@ async function main() {
   console.log("Collateral Address (source of 1 DASH network fee):");
   console.log(collateralAddr);
 
-  // we can set txid to short circuit for testing
   let txid = "";
-  // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
-  // txid = "10d9862feb6eac6cf6fa653589e39b60a0ed640bae4140c51c35401ffe019479";
-  if (!txid) {
+  let txInfoSigned;
+  {
     let utxosResult = await rpc.getaddressutxos({
       addresses: [collateralAddr],
     });
@@ -338,7 +337,7 @@ async function main() {
     // @type {Array<DashTx.TxOutput>} */
     let outputs = [{ memo: gobjIdForward, satoshis: 100000000 }];
     let txInfo = { inputs, outputs };
-    let txInfoSigned = await dashTx.hashAndSignAll(txInfo);
+    txInfoSigned = await dashTx.hashAndSignAll(txInfo);
     console.log(utxosResult);
     //
 
@@ -350,7 +349,36 @@ async function main() {
     console.log("Signed Collateral Transaction ID:");
     txid = await DashTx.getId(txInfoSigned.transaction);
     console.log(txid);
+  }
 
+  async function check() {
+    let gobjResult = await rpc
+      .request("/", {
+        method: "gobject",
+        params: ["check", gobj.dataHex],
+      })
+      .catch(
+        /** @param {any} err */ function (err) {
+          console.error(err.message);
+          console.error(err.code);
+          console.error(err);
+          // invalid burn hash
+          return null;
+        },
+      );
+
+    // { result: { 'Object status': 'OK' }, error: null, id: 5542 }
+    if (gobjResult?.result?.["Object status"] !== "OK") {
+      throw new Error(`gobject failed: ${gobjResult.result.error}`);
+    }
+    return gobjResult;
+  }
+
+  await check();
+
+  // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
+  // set to false to short circuit for testing
+  if (true) {
     let txResult = await rpc.request("/", {
       method: "sendrawtransaction",
       params: [txInfoSigned.transaction],
@@ -394,25 +422,6 @@ async function main() {
     console.log(`Waiting for block with TX ${txid}...`);
     await DashGov.utils.sleep(5000);
   }
-
-  // async function check() {
-  //   let gobjResult = await rpc
-  //     .request("/", {
-  //       method: "gobject",
-  //       params: ["check", gobj.dataHex],
-  //     })
-  //     .catch(
-  //       /** @param {any} err */ function (err) {
-  //         console.error(err.message);
-  //         console.error(err.code);
-  //         console.error(err);
-  //         // invalid collateral hash
-  //         return null;
-  //       },
-  //     );
-
-  //   return gobjResult;
-  // }
 
   async function submit() {
     let req = {
