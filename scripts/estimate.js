@@ -75,7 +75,7 @@ function main() {
   let blockTime = process.argv[4];
   let blockMs = 0;
   let secondsPerBlock = 0;
-  let proposalLeadtime = 0;
+  // let proposalLeadtime = 0;
 
   if (!cycleCount) {
     console.error(`ERROR`);
@@ -102,7 +102,7 @@ function main() {
     block: blockHeight,
   };
   if (!secondsPerBlock) {
-    secondsPerBlock = DashGov.measureSecondsPerBlock(snapshot);
+    secondsPerBlock = DashGov.estimateSecondsPerBlock(snapshot);
   }
   let estimates = DashGov.estimateProposalCycles(
     cycleCount,
