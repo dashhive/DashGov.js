@@ -1,6 +1,6 @@
 "use strict";
 
-let GObj = require("../");
+import GObj from "dashgov";
 
 // function hexToBytes(hex) {
 //   let len = hex.length / 2;

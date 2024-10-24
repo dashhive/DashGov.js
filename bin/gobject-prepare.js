@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 "use strict";
 
-let DotEnv = require("dotenv");
+import DotEnv from "dotenv";
+
+import DashGov from "dashgov";
+import DashRpc from "dashrpc";
+import DashKeys from "dashkeys";
+import DashTx from "dashtx";
+import Secp256k1 from "@dashincubator/secp256k1";
+
+import Fs from "node:fs/promises";
+
 DotEnv.config({ path: ".env" });
 DotEnv.config({ path: ".env.secret" });
-
-let DashGov = require("../");
-let DashRpc = require("dashrpc");
-let DashKeys = require("dashkeys");
-let DashTx = require("dashtx");
-let Secp256k1 = require("@dashincubator/secp256k1");
-
-let Fs = require("node:fs/promises");
 
 async function main() {
   /* jshint maxcomplexity: 100 */
@@ -138,7 +139,7 @@ async function main() {
   }
 
   /**
-   * @param {DashGov.Estimate} estimate
+   * @param {import('../dashgov.js').Estimate} estimate
    * @param {Number} i
    */
   function show(estimate, i) {
@@ -238,7 +239,7 @@ async function main() {
     return;
   }
 
-  /** @type {DashGov.GObjectData} */
+  /** @type {import('../dashgov.js').GObjectData} */
   let gobjData = DashGov.proposal.draftJson(selected, {
     name: proposalName,
     payment_address: paymentAddr,
@@ -401,7 +402,7 @@ async function main() {
   //       params: ["check", gobj.dataHex],
   //     })
   //     .catch(
-  //       /** @param {Error} err */ function (err) {
+  //       /** @param {any} err */ function (err) {
   //         console.error(err.message);
   //         console.error(err.code);
   //         console.error(err);
@@ -418,8 +419,8 @@ async function main() {
       method: "gobject",
       params: [
         "submit",
-        gobj.hashParent.toString(), // '0' must be a string for some reason
-        gobj.revision.toString(),
+        gobj.hashParent?.toString() || "0", // '0' must be a string for some reason
+        gobj.revision?.toString() || "1",
         gobj.time.toString(),
         gobj.dataHex,
         txid,
