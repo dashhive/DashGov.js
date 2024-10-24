@@ -8,47 +8,39 @@ import * as Secp256k1 from "@dashincubator/secp256k1";
 
 import Fs from "node:fs/promises";
 
-async function main() {
+/**
+ * @typedef ProposalData
+ * @prop {"mainnet"|"testnet"} network - The network type, either mainnet or testnet.
+ * @prop {String} rpcBasicAuth - Basic authentication credentials for RPC (e.g., `api:null`).
+ * @prop {String} rpcBaseUrl - Base URL for the RPC server, adjusted for the network.
+ * @prop {String} rpcExplorer - URL for the RPC explorer.
+ * @prop {Number} startPeriod - The start period for the proposal.
+ * @prop {Number} numPeriods - Number of periods for which the proposal applies.
+ * @prop {Number} dashAmount - The amount of Dash for the proposal.
+ * @prop {String} proposalUrl - URL of the proposal.
+ * @prop {String} proposalName - Name of the proposal.
+ * @prop {String} paymentAddr - Payment address for the proposal.
+ * @prop {String} burnWif - Wallet Import Format (WIF) key used for the burn address.
+ */
+
+/**
+ * @param {ProposalData} opts
+ */
+async function prepAndSubmit({
+  network,
+  rpcBasicAuth,
+  rpcBaseUrl,
+  rpcExplorer,
+  startPeriod,
+  numPeriods,
+  dashAmount,
+  proposalUrl,
+  proposalName,
+  paymentAddr,
+  burnWif,
+}) {
   /* jshint maxcomplexity: 100 */
   /* jshint maxstatements: 1000 */
-
-  console.info("");
-  console.info("USAGE");
-  console.info(
-    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./burn-key.wif> [network]",
-  );
-  console.info("");
-  console.info("EXAMPLE");
-  console.info(
-    "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif testnet",
-  );
-  console.info("");
-
-  /** @type {"mainnet"|"testnet"} */
-  let network = "mainnet";
-  let rpcBasicAuth = `api:null`;
-  let rpcBaseUrl = `https://${rpcBasicAuth}@rpc.digitalcash.dev/`;
-  let rpcExplorer = "https://rpc.digitalcash.dev/";
-
-  let isTestnet = takeFlag(process.argv, ["--testnet"]);
-  if (isTestnet) {
-    rpcBaseUrl = `https://${rpcBasicAuth}@trpc.digitalcash.dev/`;
-    rpcExplorer = "https://trpc.digitalcash.dev/";
-    network = "testnet";
-  }
-
-  let startPeriod = parseInt(process.argv[2] || "1", 10);
-  let numPeriods = parseInt(process.argv[3] || "1", 10);
-  let dashAmount = parseInt(process.argv[4] || "1", 10);
-  let proposalUrl = process.argv[5] || "";
-  let proposalName = process.argv[6] || "";
-  let paymentAddr = process.argv[7] || "";
-  let burnWifPath = process.argv[8] || "";
-  let burnWif = "";
-  if (burnWifPath) {
-    burnWif = await Fs.readFile(burnWifPath, "utf8");
-    burnWif = burnWif.trim();
-  }
 
   /**
    * @param {String} method
@@ -426,6 +418,65 @@ async function main() {
     console.log(`Waiting for GObject ${gobjId}...`);
     await DashGov.utils.sleep(5000);
   }
+}
+
+async function main() {
+  /** @type {"mainnet"|"testnet"} */
+  let network = "mainnet";
+  let rpcBasicAuth = `api:null`;
+  let rpcBaseUrl = `https://${rpcBasicAuth}@rpc.digitalcash.dev/`;
+  let rpcExplorer = "https://rpc.digitalcash.dev/";
+
+  let isTestnet = takeFlag(process.argv, ["--testnet"]);
+  if (isTestnet) {
+    rpcBaseUrl = `https://${rpcBasicAuth}@trpc.digitalcash.dev/`;
+    rpcExplorer = "https://trpc.digitalcash.dev/";
+    network = "testnet";
+  }
+
+  let wantsHelp = takeFlag(process.argv, ["--help", "help"]);
+  let mustHelp = process.argv.length !== 5 && process.argv.length !== 9;
+  if (wantsHelp || mustHelp) {
+    console.info("");
+    console.info("USAGE");
+    console.info(
+      "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./burn-key.wif> [network]",
+    );
+    console.info("");
+    console.info("EXAMPLE");
+    console.info(
+      "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif testnet",
+    );
+    console.info("");
+    return;
+  }
+
+  let startPeriod = parseInt(process.argv[2] || "1", 10);
+  let numPeriods = parseInt(process.argv[3] || "1", 10);
+  let dashAmount = parseInt(process.argv[4] || "1", 10);
+  let proposalUrl = process.argv[5] || "";
+  let proposalName = process.argv[6] || "";
+  let paymentAddr = process.argv[7] || "";
+  let burnWifPath = process.argv[8] || "";
+  let burnWif = "";
+  if (burnWifPath) {
+    burnWif = await Fs.readFile(burnWifPath, "utf8");
+    burnWif = burnWif.trim();
+  }
+
+  await prepAndSubmit({
+    network,
+    rpcBasicAuth,
+    rpcBaseUrl,
+    rpcExplorer,
+    startPeriod,
+    numPeriods,
+    dashAmount,
+    proposalUrl,
+    proposalName,
+    paymentAddr,
+    burnWif,
+  });
 }
 
 /**
