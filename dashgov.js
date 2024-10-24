@@ -185,7 +185,7 @@ function writeVarInt(dv, offset, n) {
 /**
  * @param {GObject} gobj
  */
-DashGov.serializeForCollateralTx = function ({
+DashGov.serializeForBurnTx = function ({
   hashParent = 0,
   revision = 1,
   time,

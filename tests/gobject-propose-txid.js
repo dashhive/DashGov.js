@@ -30,10 +30,10 @@ async function main() {
   let knownHash =
     "257eae59b294bb60857019674c4fd7e822d6bf0f58150f340cc8e6c273d0f2a9";
 
-  let gobjCollateralBytes = GObj.serializeForCollateralTx(gobj);
+  let gobjBurnBytes = GObj.serializeForBurnTx(gobj);
 
   if (1 === 1) {
-    const hex_bytes = GObj.utils.bytesToHex(gobjCollateralBytes);
+    const hex_bytes = GObj.utils.bytesToHex(gobjBurnBytes);
 
     const data = [
       ["hashParent", 32],
@@ -63,7 +63,7 @@ async function main() {
 
   let hashBytes;
   {
-    let hash1 = await crypto.subtle.digest("SHA-256", gobjCollateralBytes);
+    let hash1 = await crypto.subtle.digest("SHA-256", gobjBurnBytes);
     let hash2 = await crypto.subtle.digest("SHA-256", hash1);
 
     let hash1Bytes = new Uint8Array(hash1);
