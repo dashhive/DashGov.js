@@ -3,6 +3,17 @@
   "version": "0.1.0",
   "description": "Utility functions for Dash governance on the blockchain.",
   "main": "dashgov.js",
+  "type": "module",
+  "files": [
+    "./dashgov.js"
+  ],
+  "exports": {
+    ".": "./dashgov.js",
+    "./*": "./*"
+  },
+  "imports": {
+    "dashgov": "./dashgov.js"
+  },
   "scripts": {
     "bump": "npm version -m \"chore(release): bump to v%s\"",
     "fmt": "npm run prettier",
@@ -11,7 +22,7 @@
     "--------": "-------------------------------------------------",
     "jshint": "npx -p jshint@2.x -- jshint -c ./.jshintrc ./*.js",
     "prettier": "npx -p prettier@3.x -- prettier -w '**/*.{js,md}'",
-    "tsc": "npx -p typescript@5.x -- tsc -p ./jsconfig.json",
+    "tsc": "! npx -p typescript@5.x -- tsc -p ./jsconfig.json | grep '\\.js(\\d\\+,\\d\\+): error' | grep -v '\\<node_modules/'",
     "---------": "------------------------------------------------",
     "reexport-types": "npx -p jswt@1.x -- reexport",
     "prepublish": "npm run reexport-types"
@@ -36,8 +47,7 @@
     "@dashincubator/secp256k1": "^1.7.1-5",
     "@types/node": "^22.1.0",
     "dashkeys": "^1.1.5",
-    "dashrpc": "^20.0.0",
-    "dashtx": "^0.18.2",
+    "dashtx": "^0.20.1",
     "dotenv": "^16.4.5"
   }
 }

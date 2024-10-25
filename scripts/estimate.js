@@ -6,9 +6,9 @@
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-let DashGov = require("../");
+import DashGov from "dashgov";
 
-let Logger = module.exports;
+let Logger = {};
 
 Logger.logEstimate = function (estimate, index) {
   console.info(`Until next (${index})...`);
@@ -75,7 +75,7 @@ function main() {
   let blockTime = process.argv[4];
   let blockMs = 0;
   let secondsPerBlock = 0;
-  let proposalLeadtime = 0;
+  // let proposalLeadtime = 0;
 
   if (!cycleCount) {
     console.error(`ERROR`);
@@ -102,7 +102,7 @@ function main() {
     block: blockHeight,
   };
   if (!secondsPerBlock) {
-    secondsPerBlock = DashGov.measureSecondsPerBlock(snapshot);
+    secondsPerBlock = DashGov.estimateSecondsPerBlock(snapshot);
   }
   let estimates = DashGov.estimateProposalCycles(
     cycleCount,
@@ -116,6 +116,8 @@ function main() {
 
 Logger.main = main;
 
-if (require.main === module) {
+if (import.meta.main) {
   main();
 }
+
+export default Logger;

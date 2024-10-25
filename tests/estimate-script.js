@@ -1,6 +1,6 @@
 "use strict";
 
-let Estimate = require("../scripts/estimate.js");
+import Estimate from "dashgov/scripts/estimate.js";
 
 process.argv[2] = "3";
 process.argv[3] = "2106925";

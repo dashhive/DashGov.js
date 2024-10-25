@@ -1,101 +1,79 @@
 #!/usr/bin/env node
 "use strict";
 
-let DotEnv = require("dotenv");
-DotEnv.config({ path: ".env" });
-DotEnv.config({ path: ".env.secret" });
+import DashGov from "dashgov";
+import DashKeys from "dashkeys";
+import DashTx from "dashtx";
+import * as Secp256k1 from "@dashincubator/secp256k1";
 
-let DashGov = require("../");
-let DashRpc = require("dashrpc");
-let DashKeys = require("dashkeys");
-let DashTx = require("dashtx");
-let Secp256k1 = require("@dashincubator/secp256k1");
+import Fs from "node:fs/promises";
 
-let Fs = require("node:fs/promises");
+/**
+ * @typedef ProposalData
+ * @prop {"mainnet"|"testnet"} network - The network type, either mainnet or testnet.
+ * @prop {String} rpcBasicAuth - Basic authentication credentials for RPC (e.g., `api:null`).
+ * @prop {String} rpcBaseUrl - Base URL for the RPC server, adjusted for the network.
+ * @prop {String} rpcExplorer - URL for the RPC explorer.
+ * @prop {Number} startPeriod - The start period for the proposal.
+ * @prop {Number} numPeriods - Number of periods for which the proposal applies.
+ * @prop {Number} dashAmount - The amount of Dash for the proposal.
+ * @prop {String} proposalUrl - URL of the proposal.
+ * @prop {String} proposalName - Name of the proposal.
+ * @prop {String} paymentAddr - Payment address for the proposal.
+ * @prop {String} burnWif - Wallet Import Format (WIF) key used for the burn address.
+ */
 
-async function main() {
+/**
+ * @param {ProposalData} opts
+ */
+async function prepAndSubmit({
+  network,
+  rpcBasicAuth,
+  rpcBaseUrl,
+  rpcExplorer,
+  startPeriod,
+  numPeriods,
+  dashAmount,
+  proposalUrl,
+  proposalName,
+  paymentAddr,
+  burnWif,
+}) {
   /* jshint maxcomplexity: 100 */
   /* jshint maxstatements: 1000 */
 
-  console.info("");
-  console.info("USAGE");
-  console.info(
-    "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./collateral-key.wif>",
-  );
-  console.info("");
-  console.info("EXAMPLE");
-  console.info(
-    "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif",
-  );
-  console.info("");
-
-  let startPeriod = parseInt(process.argv[2] || "1", 10);
-  let numPeriods = parseInt(process.argv[3] || "1", 10);
-  let dashAmount = parseInt(process.argv[4] || "1", 10);
-  let proposalUrl = process.argv[5] || "";
-  let proposalName = process.argv[6] || "";
-  let paymentAddr = process.argv[7] || "";
-  let collateralWifPath = process.argv[8] || "";
-  let collateralWif = "";
-  if (collateralWifPath) {
-    collateralWif = await Fs.readFile(collateralWifPath, "utf8");
-    collateralWif = collateralWif.trim();
+  /**
+   * @param {String} method
+   * @param {...any} params
+   */
+  async function rpc(method, ...params) {
+    let result = await DashTx.utils.rpc(rpcBaseUrl, method, ...params);
+    return result;
   }
 
-  let rpcConfig = {
-    protocol: process.env.DASHD_RPC_PROTOCOL || "",
-    user: process.env.DASHD_RPC_USER || process.env.DASHD_RPC_USERNAME || "",
-    pass: process.env.DASHD_RPC_PASS || process.env.DASHD_RPC_PASSWORD || "",
-    host: process.env.DASHD_RPC_HOST || process.env.DASHD_RPC_HOSTNAME || "",
-    port: parseInt(process.env.DASHD_RPC_PORT || "", 10),
-    onconnected: function () {
-      console.info(
-        `[dashrpc] connected to '${rpcConfig.host}:${rpcConfig.port}'`,
-      );
-    },
-  };
-
-  if (!rpcConfig.protocol) {
-    throw new Error(`not set: export DASHD_RPC_PROTOCOL=`);
-  }
-  if (!rpcConfig.user) {
-    throw new Error(`not set: export DASHD_RPC_USERNAME=`);
-  }
-  if (!rpcConfig.pass) {
-    throw new Error(`not set: export DASHD_RPC_PASSWORD=`);
-  }
-  if (!rpcConfig.host) {
-    throw new Error(`not set: export DASHD_RPC_HOSTNAME=`);
-  }
-  if (!rpcConfig.port) {
-    throw new Error(`not set: export DASHD_RPC_PORT=`);
-  }
-
-  let rpc = DashRpc.create(rpcConfig);
-  void (await rpc.init());
-
-  let tipsResult = await rpc.getBestBlockHash();
-  let blockInfoResult = await rpc.getBlock(tipsResult.result, 1);
-  let blockHeight = blockInfoResult.result.height;
-  let blockMs = blockInfoResult.result.time * 1000;
-  // console.log(rootInfoResult.result, blockInfoResult.result, blockMs);
+  let tipsResult = await rpc("getbestblockhash");
+  let blockInfoResult = await rpc("getblock", tipsResult, 1);
+  let blockHeight = blockInfoResult.height;
+  let blockMs = blockInfoResult.time * 1000;
+  // console.log(rootInfoResult, blockInfoResult, blockMs);
   // let blockTime = new Date(blockMs);
 
   // for testnet
   let blockDelta = 25000;
-  let rootHeight = blockInfoResult.result.height - blockDelta;
-  let rootResult = await rpc.getBlockHash(rootHeight);
-  let rootInfoResult = await rpc.getBlock(rootResult.result, 1);
+  let rootHeight = blockInfoResult.height - blockDelta;
+  let rootResult = await rpc("getblockhash", rootHeight);
+  let rootInfoResult = await rpc("getblock", rootResult, 1);
 
   let root = {
     block: rootHeight,
-    ms: rootInfoResult.result.time * 1000,
+    ms: rootInfoResult.time * 1000,
   };
   // let rootTime = new Date(root.ms);
 
   let totalCycleCount = numPeriods - 1;
   let endPeriod = startPeriod + totalCycleCount;
-  let cycleCount = Math.max(3, endPeriod);
+  let cycleCount = endPeriod;
+  let displayCycleCount = Math.max(3, endPeriod);
   let snapshot = {
     ms: blockMs,
     block: blockHeight,
@@ -107,7 +85,7 @@ async function main() {
     secondsPerBlock,
   );
   let estimates = DashGov.estimateProposalCycles(
-    cycleCount,
+    displayCycleCount,
     snapshot,
     secondsPerBlock,
   );
@@ -130,7 +108,7 @@ async function main() {
   }
 
   /**
-   * @param {DashGov.Estimate} estimate
+   * @param {import('../dashgov.js').Estimate} estimate
    * @param {Number} i
    */
   function show(estimate, i) {
@@ -230,7 +208,6 @@ async function main() {
     return;
   }
 
-  /** @type {DashGov.GObjectData} */
   let gobjData = DashGov.proposal.draftJson(selected, {
     name: proposalName,
     payment_address: paymentAddr,
@@ -242,10 +219,10 @@ async function main() {
   let gobj = DashGov.proposal.draft(now, selected.start.startMs, gobjData, {});
   console.log(gobj);
 
-  let gobjCollateralBytes = DashGov.serializeForCollateralTx(gobj);
-  let gobjCollateralHex = DashGov.utils.bytesToHex(gobjCollateralBytes);
+  let gobjBurnBytes = DashGov.serializeForBurnTx(gobj);
+  let gobjBurnHex = DashGov.utils.bytesToHex(gobjBurnBytes);
 
-  let gobjHashBytes = await DashGov.utils.doubleSha256(gobjCollateralBytes);
+  let gobjHashBytes = await DashGov.utils.doubleSha256(gobjBurnBytes);
   let gobjId = DashGov.utils.hashToId(gobjHashBytes);
 
   let gobjHashBytesReverse = gobjHashBytes.slice();
@@ -253,11 +230,11 @@ async function main() {
   let gobjIdForward = DashGov.utils.hashToId(gobjHashBytesReverse);
 
   console.log("");
-  console.log("GObject Serialization (for hash for collateral memo)");
-  console.log(gobjCollateralHex);
+  console.log("GObject Serialization (for hash for burn memo)");
+  console.log(gobjBurnHex);
 
   console.log("");
-  console.log("(Collateralized) GObject ID (for op return memo)");
+  console.log("(Burnable) GObject ID (for op return memo)");
   console.log(gobjIdForward);
   console.log("GObject ID (for 'gobject get <gobj-id>')");
   console.log(gobjId);
@@ -265,15 +242,15 @@ async function main() {
   let keyUtils = {
     /**
      * @param {DashTx.TxInputForSig} txInput
-     * @param {Number} i
+     * @param {Number} [i]
      */
     getPrivateKey: async function (txInput, i) {
-      return DashKeys.wifToPrivKey(collateralWif, { version: "testnet" });
+      return DashKeys.wifToPrivKey(burnWif, { version: network });
     },
 
     /**
      * @param {DashTx.TxInputForSig} txInput
-     * @param {Number} i
+     * @param {Number} [i]
      */
     getPublicKey: async function (txInput, i) {
       let privKeyBytes = await keyUtils.getPrivateKey(txInput, i);
@@ -287,7 +264,8 @@ async function main() {
      * @param {Uint8Array} txHashBytes
      */
     sign: async function (privKeyBytes, txHashBytes) {
-      let sigOpts = { canonical: true, extraEntropy: true };
+      // extraEntropy set to null to make gobject transactions idempotent
+      let sigOpts = { canonical: true, extraEntropy: null };
       let sigBytes = await Secp256k1.sign(txHashBytes, privKeyBytes, sigOpts);
 
       return sigBytes;
@@ -306,76 +284,87 @@ async function main() {
   let dashTx = DashTx.create(keyUtils);
 
   // dash-cli -testnet getaddressutxos '{"addresses":["yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC"]}'
-  let collateralAddr = await DashKeys.wifToAddr(collateralWif, {
-    version: "testnet",
+  let burnAddr = await DashKeys.wifToAddr(burnWif, {
+    version: network,
   });
 
   console.log("");
-  console.log("Collateral Address (source of 1 DASH network fee):");
-  console.log(collateralAddr);
+  console.log("Burn Address (source of 1 DASH network fee):");
+  console.log(burnAddr);
 
-  // we can set txid to short circuit for testing
   let txid = "";
-  // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
-  // txid = "";
-  if (!txid) {
-    let utxosResult = await rpc.getaddressutxos({
-      addresses: [collateralAddr],
+  let txInfoSigned;
+  {
+    let utxosResult = await rpc("getaddressutxos", {
+      addresses: [burnAddr],
     });
     // TODO make sure there's just 1
     // @type {Array<DashTx.TxInput>} */
-    let inputs = [utxosResult.result[0]];
+    let inputs = [utxosResult[0]];
     // TODO the hash bytes may be reversed
     // @type {Array<DashTx.TxOutput>} */
     let outputs = [{ memo: gobjIdForward, satoshis: 100000000 }];
     let txInfo = { inputs, outputs };
-    let txInfoSigned = await dashTx.hashAndSignAll(txInfo);
+    txInfoSigned = await dashTx.hashAndSignAll(txInfo);
     console.log(utxosResult);
     //
 
     console.log("");
-    console.log("Signed Collateral Transaction (ready for broadcast):");
+    console.log("Signed Burn Transaction (ready for broadcast):");
     console.log(txInfoSigned.transaction);
 
     console.log("");
-    console.log("Signed Collateral Transaction ID:");
+    console.log("Signed Burn Transaction ID:");
     txid = await DashTx.getId(txInfoSigned.transaction);
     console.log(txid);
+  }
 
-    let txResult = await rpc.request("/", {
-      method: "sendrawtransaction",
-      params: [txInfoSigned.transaction],
-    });
+  async function check() {
+    let gobjResult = await rpc("gobject", "check", gobj.dataHex).catch(
+      /** @param {any} err */ function (err) {
+        console.error(err.message);
+        console.error(err.code);
+        console.error(err);
+        // invalid burn hash
+        return null;
+      },
+    );
+
+    // { result: { 'Object status': 'OK' }, error: null, id: 5542 }
+    if (gobjResult?.["Object status"] !== "OK") {
+      throw new Error(`gobject failed: ${gobjResult.error}`);
+    }
+    return gobjResult;
+  }
+
+  await check();
+
+  // ./bin/gobject-prepare.js 1 3 100 https://example.com/proposal-00 proposal-00 yPPy7Z5RQj46SnFtuFXyT6DFAygxESPR7K ./yjZxu7SJAwgSm1JtWybuQRYQDx34z8P2Z7.wif
+  // set to false to short circuit for testing
+  if (true) {
+    let txResult = await rpc("sendrawtransaction", txInfoSigned.transaction);
     console.log("");
     console.log("Transaction sent:");
     console.log(txResult);
   }
 
   for (;;) {
-    let txResult = await rpc
-      .request("/", {
-        method: "gettxoutproof",
-        params: [[txid]],
-      })
-      .catch(
-        /** @param {Error} err */ function (err) {
-          const E_NOT_IN_BLOCK = -5;
-          // @ts-ignore - code exists
-          let code = err.code;
-          if (code === E_NOT_IN_BLOCK) {
-            return null;
-          }
-          throw err;
-        },
-      );
+    let txResult = await rpc("gettxoutproof", [txid]).catch(
+      /** @param {Error} err */ function (err) {
+        const E_NOT_IN_BLOCK = -5;
+        // @ts-ignore - code exists
+        let code = err.code;
+        if (code === E_NOT_IN_BLOCK) {
+          return null;
+        }
+        throw err;
+      },
+    );
     if (txResult) {
       console.log("");
       console.log(`TxOutProof`);
       console.log(txResult);
-      let jsonResult = await rpc.request("/", {
-        method: "getrawtransaction",
-        params: [txid, 1],
-      });
+      let jsonResult = await rpc("getrawtransaction", txid, 1);
       console.log("");
       console.log(`Tx`);
       console.log(jsonResult);
@@ -386,51 +375,33 @@ async function main() {
     await DashGov.utils.sleep(5000);
   }
 
-  // async function check() {
-  //   let gobjResult = await rpc
-  //     .request("/", {
-  //       method: "gobject",
-  //       params: ["check", gobj.dataHex],
-  //     })
-  //     .catch(
-  //       /** @param {Error} err */ function (err) {
-  //         console.error(err.message);
-  //         console.error(err.code);
-  //         console.error(err);
-  //         // invalid collateral hash
-  //         return null;
-  //       },
-  //     );
-
-  //   return gobjResult;
-  // }
-
   async function submit() {
-    let gobjResult = await rpc
-      .request("/", {
-        method: "gobject",
-        params: [
-          "submit",
-          gobj.hashParent.toString(), // '0' must be a string for some reason
-          gobj.revision.toString(),
-          gobj.time.toString(),
-          gobj.dataHex,
-          txid,
-        ],
-      })
-      .catch(
-        /** @param {Error} err */ function (err) {
-          const E_INVALID_COLLATERAL = -32603;
-          // @ts-ignore - code exists
-          let code = err.code;
-          if (code === E_INVALID_COLLATERAL) {
-            // wait for collateral to become valid
-            console.error(code, err.message);
-            return null;
-          }
-          throw err;
-        },
-      );
+    let req = {
+      method: "gobject",
+      params: [
+        "submit",
+        gobj.hashParent?.toString() || "0", // '0' must be a string for some reason
+        gobj.revision?.toString() || "1",
+        gobj.time.toString(),
+        gobj.dataHex,
+        txid,
+      ],
+    };
+    let args = req.params.join(" ");
+    console.log(`${req.method} ${args}`);
+    let gobjResult = await rpc("gobject", ...req.params).catch(
+      /** @param {Error} err */ function (err) {
+        const E_INVALID_COLLATERAL = -32603;
+        // @ts-ignore - code exists
+        let code = err.code;
+        if (code === E_INVALID_COLLATERAL) {
+          // wait for burn to become valid
+          console.error(code, err.message);
+          return null;
+        }
+        throw err;
+      },
+    );
 
     return gobjResult;
   }
@@ -447,6 +418,87 @@ async function main() {
     console.log(`Waiting for GObject ${gobjId}...`);
     await DashGov.utils.sleep(5000);
   }
+}
+
+async function main() {
+  /** @type {"mainnet"|"testnet"} */
+  let network = "mainnet";
+  let rpcBasicAuth = `api:null`;
+  let rpcBaseUrl = `https://${rpcBasicAuth}@rpc.digitalcash.dev/`;
+  let rpcExplorer = "https://rpc.digitalcash.dev/";
+
+  let isTestnet = takeFlag(process.argv, ["--testnet"]);
+  if (isTestnet) {
+    rpcBaseUrl = `https://${rpcBasicAuth}@trpc.digitalcash.dev/`;
+    rpcExplorer = "https://trpc.digitalcash.dev/";
+    network = "testnet";
+  }
+
+  let wantsHelp = takeFlag(process.argv, ["--help", "help"]);
+  let mustHelp = process.argv.length !== 5 && process.argv.length !== 9;
+  if (wantsHelp || mustHelp) {
+    console.info("");
+    console.info("USAGE");
+    console.info(
+      "    dashgov draft-proposal [start period] [num periods] <DASH-per-period> <proposal-url> <name> <payment-addr> <./burn-key.wif> [network]",
+    );
+    console.info("");
+    console.info("EXAMPLE");
+    console.info(
+      "    dashgov draft-proposal '1' '3' '100' 'https://example.com/example-proposal' example-proposal yT6GS8qPrhsiiLHEaTWPYJMwfPPVt2SSFC ./private-key.wif testnet",
+    );
+    console.info("");
+    return;
+  }
+
+  let startPeriod = parseInt(process.argv[2] || "1", 10);
+  let numPeriods = parseInt(process.argv[3] || "1", 10);
+  let dashAmount = parseInt(process.argv[4] || "1", 10);
+  let proposalUrl = process.argv[5] || "";
+  let proposalName = process.argv[6] || "";
+  let paymentAddr = process.argv[7] || "";
+  let burnWifPath = process.argv[8] || "";
+  let burnWif = "";
+  if (burnWifPath) {
+    burnWif = await Fs.readFile(burnWifPath, "utf8");
+    burnWif = burnWif.trim();
+  }
+
+  await prepAndSubmit({
+    network,
+    rpcBasicAuth,
+    rpcBaseUrl,
+    rpcExplorer,
+    startPeriod,
+    numPeriods,
+    dashAmount,
+    proposalUrl,
+    proposalName,
+    paymentAddr,
+    burnWif,
+  });
+}
+
+/**
+ * Find, remove, and return the first matching flag from the arguments list
+ * @param {Array<String>} argv
+ * @param {Array<String>} flags
+ */
+function takeFlag(argv, flags) {
+  let flagValue = null;
+
+  for (let flag of flags) {
+    let index = argv.indexOf(flag);
+    if (index === -1) {
+      continue;
+    }
+
+    flagValue = argv[index];
+    void argv.splice(index, 1);
+    break;
+  }
+
+  return flagValue;
 }
 
 main()
