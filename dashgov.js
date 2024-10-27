@@ -38,6 +38,12 @@
  */
 
 /**
+ * @typedef Selection
+ * @prop {Estimate} start
+ * @prop {Estimate} end
+ */
+
+/**
  * @typedef Estimate
  * @prop {String} startIso
  * @prop {Uint53} startMs - suggested time to make proposal visible
@@ -337,7 +343,7 @@ DashGov.selectEstimates = function (estimates, startPeriod, endPeriod) {
   }
   if (!startEstimate) {
     throw new Error(
-      `${startPeriod} is not valid ('startPeriod' might not be a number)`,
+      `${startPeriod} is not valid ('startPeriod' may be out of bounds or not a number)`,
     );
   }
 
