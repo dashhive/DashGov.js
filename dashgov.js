@@ -321,9 +321,16 @@ DashGov.estimateBlockHeight = function (ms, secondsPerBlock) {
 };
 
 /**
+ * @typedef Selection
+ * @prop {Estimate} start
+ * @prop {Estimate} end
+ */
+
+/**
  * @param {Estimates} estimates
  * @param {Uint32} startPeriod
  * @param {Uint32} endPeriod
+ * @returns {Selection}
  */
 DashGov.selectEstimates = function (estimates, startPeriod, endPeriod) {
   let startEstimate;
