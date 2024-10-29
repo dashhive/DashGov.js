@@ -1,6 +1,6 @@
 {
   "name": "dashgov",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Utility functions for Dash governance on the blockchain.",
   "main": "dashgov.js",
   "type": "module",
